@@ -17,6 +17,10 @@
                     <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
                     <h5>Drag & Drop PDF Files</h5>
                     <p class="text-muted">or click to browse</p>
+                    <p class="text-muted small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Maximum file size: <strong>50MB</strong>
+                    </p>
                     <input type="file" id="fileInput" accept=".pdf" style="display: none;">
                     <button class="btn btn-outline-primary" onclick="document.getElementById('fileInput').click()">
                         <i class="fas fa-folder-open me-2"></i>Choose File
@@ -184,7 +188,9 @@ document.addEventListener('DOMContentLoaded', function() {
         uploadArea.classList.remove('dragover');
         const files = e.dataTransfer.files;
         if (files.length > 0) {
-            handleFileUpload(files[0]);
+            const file = files[0];
+            showFileInfo(file);
+            handleFileUpload(file);
         }
     });
     
@@ -194,7 +200,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     fileInput.addEventListener('change', function(e) {
         if (e.target.files.length > 0) {
-            handleFileUpload(e.target.files[0]);
+            const file = e.target.files[0];
+            showFileInfo(file);
+            handleFileUpload(file);
         }
     });
     
@@ -202,9 +210,56 @@ document.addEventListener('DOMContentLoaded', function() {
     loadDocuments();
 });
 
+function showFileInfo(file) {
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    const maxSize = 50 * 1024 * 1024;
+    const isOverLimit = file.size > maxSize;
+    
+    // Create or update file info display
+    let fileInfo = document.getElementById('fileInfo');
+    if (!fileInfo) {
+        fileInfo = document.createElement('div');
+        fileInfo.id = 'fileInfo';
+        fileInfo.className = 'mt-3 p-3 border rounded';
+        document.getElementById('uploadArea').appendChild(fileInfo);
+    }
+    
+    fileInfo.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <i class="fas fa-file-pdf text-danger me-2"></i>
+                <strong>${file.name}</strong>
+                <br>
+                <small class="text-muted">Size: ${fileSizeMB}MB</small>
+            </div>
+            <div>
+                ${isOverLimit ? 
+                    '<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>Too Large</span>' : 
+                    '<span class="badge bg-success"><i class="fas fa-check me-1"></i>Ready</span>'
+                }
+            </div>
+        </div>
+    `;
+    
+    // Remove file info after 5 seconds
+    setTimeout(() => {
+        if (fileInfo && fileInfo.parentNode) {
+            fileInfo.remove();
+        }
+    }, 5000);
+}
+
 function handleFileUpload(file) {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
         alert('Please upload a PDF file');
+        return;
+    }
+    
+    // Check file size (50MB = 50 * 1024 * 1024 bytes)
+    const maxSize = 50 * 1024 * 1024; // 50MB in bytes
+    if (file.size > maxSize) {
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        alert(`File size (${fileSizeMB}MB) exceeds the maximum limit of 50MB. Please choose a smaller file.`);
         return;
     }
     
