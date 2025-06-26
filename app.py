@@ -525,7 +525,7 @@ def upload_file():
             try:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO documents (user_id, filename, filepath, status) VALUES (%s, %s, %s, %s)",
+                    "INSERT INTO documents (user_id, filename, filepath, status) VALUES (?, ?, ?, ?)",
                     (session['user_id'], filename, filepath, 'processing')
                 )
                 conn.commit()
@@ -563,7 +563,7 @@ def analyze_document(doc_id):
         if conn:
             try:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM documents WHERE id = %s", (doc_id,))
+                cursor.execute("SELECT * FROM documents WHERE id = ?", (doc_id,))
                 doc = cursor.fetchone()
                 if not doc:
                     return
@@ -578,7 +578,7 @@ def analyze_document(doc_id):
         
         # Update progress
         if conn:
-            cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('processing', doc_id))
+            cursor.execute("UPDATE documents SET status = ? WHERE id = ?", ('processing', doc_id))
             conn.commit()
         
         # Extract text
@@ -601,7 +601,7 @@ def analyze_document(doc_id):
         # Store results
         if conn:
             cursor.execute(
-                "UPDATE documents SET status = %s, analysis = %s WHERE id = %s",
+                "UPDATE documents SET status = ?, analysis = ? WHERE id = ?",
                 ('completed', json.dumps(combined_analysis), doc_id)
             )
             conn.commit()
@@ -616,7 +616,7 @@ def analyze_document(doc_id):
         logger.error(f"Document analysis failed: {e}")
         if conn:
             try:
-                cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('error', doc_id))
+                cursor.execute("UPDATE documents SET status = ? WHERE id = ?", ('error', doc_id))
                 conn.commit()
             except:
                 pass
@@ -633,7 +633,7 @@ def get_status(doc_id):
     if conn:
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+            cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (doc_id, session['user_id']))
             doc = cursor.fetchone()
             
             if doc:
@@ -669,7 +669,7 @@ def get_documents():
     if conn:
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM documents WHERE user_id = %s ORDER BY created_at DESC", (session['user_id'],))
+            cursor.execute("SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC", (session['user_id'],))
             docs = cursor.fetchall()
             
             user_docs = [
