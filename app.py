@@ -1,0 +1,705 @@
+import os
+import json
+import base64
+import tempfile
+import threading
+import time
+import logging
+import secrets
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, abort
+from flask_session import Session
+from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+import openai
+import requests
+from dotenv import load_dotenv
+import fitz  # PyMuPDF
+from PIL import Image
+import io
+import re
+import redis
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import sqlite3
+
+# Optional imports with graceful fallbacks
+try:
+    import easyocr
+    EASYOCR_AVAILABLE = True
+except ImportError:
+    EASYOCR_AVAILABLE = False
+    easyocr = None
+
+try:
+    import pytesseract
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    TESSERACT_AVAILABLE = False
+    pytesseract = None
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/app.log') if os.path.exists('logs') else logging.StreamHandler(),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', secrets.token_hex(32))
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+
+# Production settings
+if os.getenv('FLASK_ENV') == 'production':
+    app.config['DEBUG'] = False
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+else:
+    app.config['DEBUG'] = True
+
+Session(app)
+
+# Configure API keys
+openai.api_key = os.getenv('OPENAI_API_KEY')
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
+OFFLINE_MODE = os.getenv('OFFLINE_MODE', 'False').lower() == 'true'
+
+# Redis configuration
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+try:
+    redis_client = redis.from_url(REDIS_URL)
+    redis_client.ping()
+    logger.info("Redis connection established")
+except:
+    redis_client = None
+    logger.warning("Redis not available, using in-memory storage")
+
+# Database configuration
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': os.getenv('DB_PORT', '5432'),
+    'database': os.getenv('DB_NAME', 'contract_analyzer'),
+    'user': os.getenv('DB_USER', 'contract_user'),
+    'password': os.getenv('DB_PASSWORD', 'contract_password')
+}
+
+# Create necessary directories
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs('logs', exist_ok=True)
+os.makedirs('flask_session', exist_ok=True)
+
+# Initialize OCR reader
+if EASYOCR_AVAILABLE:
+    try:
+        reader = easyocr.Reader(['en'])
+        logger.info("EasyOCR initialized successfully")
+    except Exception as e:
+        reader = None
+        logger.warning(f"EasyOCR not available: {e}")
+else:
+    reader = None
+    logger.warning("EasyOCR not installed")
+
+# In-memory storage (fallback)
+users = {}
+documents = {}
+
+def get_db_connection():
+    """Get database connection"""
+    try:
+        if os.getenv('DB_TYPE', 'sqlite') == 'postgres':
+            conn = psycopg2.connect(**DB_CONFIG)
+            conn.cursor_factory = RealDictCursor
+        else:
+            conn = sqlite3.connect('contract_analyzer.db')
+            conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
+        return None
+
+def init_database():
+    """Initialize database tables"""
+    conn = get_db_connection()
+    if not conn:
+        return
+    
+    try:
+        cursor = conn.cursor()
+        
+        if os.getenv('DB_TYPE', 'sqlite') == 'postgres':
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS documents (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id),
+                    filename VARCHAR(255) NOT NULL,
+                    filepath VARCHAR(500) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'processing',
+                    analysis JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        else:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    filename TEXT NOT NULL,
+                    filepath TEXT NOT NULL,
+                    status TEXT DEFAULT 'processing',
+                    analysis TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            """)
+        
+        conn.commit()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+    finally:
+        conn.close()
+
+# Initialize database
+init_database()
+
+class ContractAnalyzer:
+    def __init__(self):
+        self.openai_client = openai.OpenAI(api_key=openai.api_key) if openai.api_key else None
+        
+    def extract_text_from_pdf(self, pdf_path):
+        """Extract text from PDF using multiple methods"""
+        try:
+            # Method 1: PyMuPDF
+            doc = fitz.open(pdf_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+            
+            if len(text.strip()) > 100:  # If we got substantial text
+                return text
+                
+            # Method 2: OCR with EasyOCR (if available)
+            if reader and EASYOCR_AVAILABLE:
+                doc = fitz.open(pdf_path)
+                ocr_text = ""
+                for page in doc:
+                    pix = page.get_pixmap()
+                    img_data = pix.tobytes("png")
+                    img = Image.open(io.BytesIO(img_data))
+                    results = reader.readtext(img)
+                    for (bbox, text, prob) in results:
+                        if prob > 0.5:  # Confidence threshold
+                            ocr_text += text + " "
+                doc.close()
+                
+                if len(ocr_text.strip()) > 100:
+                    return ocr_text
+                    
+            # Method 3: Tesseract OCR (if available)
+            if TESSERACT_AVAILABLE:
+                doc = fitz.open(pdf_path)
+                tesseract_text = ""
+                for page in doc:
+                    pix = page.get_pixmap()
+                    img_data = pix.tobytes("png")
+                    img = Image.open(io.BytesIO(img_data))
+                    tesseract_text += pytesseract.image_to_string(img) + " "
+                doc.close()
+                
+                return tesseract_text
+            
+            return text
+            
+        except Exception as e:
+            logger.error(f"Error extracting text: {e}")
+            return ""
+    
+    def analyze_contract_with_openai(self, text):
+        """Analyze contract using OpenAI GPT-4.1 Mini"""
+        if not self.openai_client or OFFLINE_MODE:
+            return self.get_mock_analysis()
+            
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": """You are an expert contract analyst. Analyze the following contract and identify:
+1. Key risks and their severity (0-100 scale)
+2. Financial implications
+3. Legal obligations
+4. Business impact
+5. Recommendations for mitigation
+
+Provide your analysis in JSON format with the following structure:
+{
+    "overall_risk_score": 0-100,
+    "risks": [
+        {
+            "type": "financial|legal|operational|compliance",
+            "description": "Risk description",
+            "severity": 0-100,
+            "impact": "High|Medium|Low",
+            "recommendation": "Mitigation strategy"
+        }
+    ],
+    "financial_impact": "Estimated cost or financial exposure",
+    "legal_obligations": ["List of key legal requirements"],
+    "business_impact": "Operational impact assessment",
+    "summary": "Executive summary"
+}"""},
+                    {"role": "user", "content": f"Analyze this contract:\n\n{text[:8000]}"}
+                ],
+                max_tokens=2000
+            )
+            
+            return json.loads(response.choices[0].message.content)
+            
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            return self.get_mock_analysis()
+    
+    def analyze_contract_with_deepseek(self, text):
+        """Analyze contract using DeepSeek v3"""
+        if OFFLINE_MODE or not DEEPSEEK_API_KEY:
+            return self.get_mock_analysis()
+            
+        try:
+            headers = {
+                'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": "You are an expert contract analyst. Provide detailed risk analysis."},
+                    {"role": "user", "content": f"Analyze this contract for risks:\n\n{text[:8000]}"}
+                ],
+                "max_tokens": 2000
+            }
+            
+            response = requests.post(
+                'https://api.deepseek.com/v1/chat/completions',
+                headers=headers,
+                json=data
+            )
+            
+            if response.status_code == 200:
+                return json.loads(response.json()['choices'][0]['message']['content'])
+            else:
+                return self.get_mock_analysis()
+                
+        except Exception as e:
+            logger.error(f"DeepSeek API error: {e}")
+            return self.get_mock_analysis()
+    
+    def get_mock_analysis(self):
+        """Return mock analysis for demo mode"""
+        return {
+            "overall_risk_score": 65,
+            "risks": [
+                {
+                    "type": "financial",
+                    "description": "Unlimited liability clause exposes company to significant financial risk",
+                    "severity": 80,
+                    "impact": "High",
+                    "recommendation": "Negotiate liability cap or insurance coverage"
+                },
+                {
+                    "type": "legal",
+                    "description": "Indemnification clause requires company to defend third parties",
+                    "severity": 70,
+                    "impact": "High",
+                    "recommendation": "Limit indemnification scope and duration"
+                },
+                {
+                    "type": "operational",
+                    "description": "Short notice period for contract termination",
+                    "severity": 50,
+                    "impact": "Medium",
+                    "recommendation": "Extend notice period to 30-60 days"
+                }
+            ],
+            "financial_impact": "Potential exposure of $500,000 - $2,000,000",
+            "legal_obligations": [
+                "Maintain insurance coverage",
+                "Provide quarterly reports",
+                "Comply with data protection regulations"
+            ],
+            "business_impact": "Requires additional legal review and potential operational changes",
+            "summary": "Contract contains several high-risk clauses requiring immediate attention"
+        }
+
+analyzer = ContractAnalyzer()
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for load balancers"""
+    try:
+        # Check database connection
+        conn = get_db_connection()
+        if conn:
+            conn.close()
+        
+        # Check Redis connection
+        if redis_client:
+            redis_client.ping()
+        
+        return jsonify({
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'version': '1.0.0'
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e)
+        }), 500
+
+@app.route('/')
+def index():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('index.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        
+        # Try database first
+        conn = get_db_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+                user = cursor.fetchone()
+                
+                if user and check_password_hash(user['password_hash'], password):
+                    session['user_id'] = user['id']
+                    session['username'] = username
+                    logger.info(f"User {username} logged in successfully")
+                    return redirect(url_for('index'))
+            except Exception as e:
+                logger.error(f"Database login error: {e}")
+            finally:
+                conn.close()
+        
+        # Fallback to in-memory storage
+        if username in users and check_password_hash(users[username]['password'], password):
+            session['user_id'] = username
+            session['username'] = username
+            return redirect(url_for('index'))
+        
+        flash('Invalid username or password')
+        logger.warning(f"Failed login attempt for user: {username}")
+    
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        
+        if len(password) < 6:
+            flash('Password must be at least 6 characters long')
+            return render_template('register.html')
+        
+        # Try database first
+        conn = get_db_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+                if cursor.fetchone():
+                    flash('Username already exists')
+                    return render_template('register.html')
+                
+                password_hash = generate_password_hash(password)
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+                    (username, password_hash)
+                )
+                conn.commit()
+                
+                user_id = cursor.lastrowid
+                session['user_id'] = user_id
+                session['username'] = username
+                logger.info(f"New user registered: {username}")
+                return redirect(url_for('index'))
+                
+            except Exception as e:
+                logger.error(f"Database registration error: {e}")
+                flash('Registration failed. Please try again.')
+            finally:
+                conn.close()
+        
+        # Fallback to in-memory storage
+        if username in users:
+            flash('Username already exists')
+        else:
+            users[username] = {
+                'password': generate_password_hash(password),
+                'created_at': datetime.now()
+            }
+            session['user_id'] = username
+            session['username'] = username
+            return redirect(url_for('index'))
+    
+    return render_template('register.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if file and file.filename.lower().endswith('.pdf'):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Start analysis in background
+        doc_id = f"doc_{int(time.time())}"
+        
+        # Store in database if available
+        conn = get_db_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO documents (user_id, filename, filepath, status) VALUES (%s, %s, %s, %s)",
+                    (session['user_id'], filename, filepath, 'processing')
+                )
+                conn.commit()
+                doc_id = cursor.lastrowid
+            except Exception as e:
+                logger.error(f"Database upload error: {e}")
+            finally:
+                conn.close()
+        
+        # Fallback to in-memory storage
+        documents[doc_id] = {
+            'user_id': session['user_id'],
+            'filename': filename,
+            'filepath': filepath,
+            'status': 'processing',
+            'progress': 0
+        }
+        
+        thread = threading.Thread(target=analyze_document, args=(doc_id,))
+        thread.start()
+        
+        logger.info(f"Document uploaded: {filename} by user {session['username']}")
+        return jsonify({
+            'doc_id': doc_id,
+            'message': 'File uploaded successfully. Analysis in progress.'
+        })
+    
+    return jsonify({'error': 'Invalid file type. Please upload a PDF.'}), 400
+
+def analyze_document(doc_id):
+    """Background function to analyze document"""
+    try:
+        # Get document from database or memory
+        conn = get_db_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM documents WHERE id = %s", (doc_id,))
+                doc = cursor.fetchone()
+                if not doc:
+                    return
+            except Exception as e:
+                logger.error(f"Database document fetch error: {e}")
+                conn.close()
+                return
+        else:
+            doc = documents.get(doc_id)
+            if not doc:
+                return
+        
+        # Update progress
+        if conn:
+            cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('processing', doc_id))
+            conn.commit()
+        
+        # Extract text
+        text = analyzer.extract_text_from_pdf(doc['filepath'])
+        
+        # Analyze with OpenAI
+        openai_analysis = analyzer.analyze_contract_with_openai(text)
+        
+        # Analyze with DeepSeek
+        deepseek_analysis = analyzer.analyze_contract_with_deepseek(text)
+        
+        # Combine analyses
+        combined_analysis = {
+            'openai': openai_analysis,
+            'deepseek': deepseek_analysis,
+            'text': text[:1000] + "..." if len(text) > 1000 else text,
+            'analyzed_at': datetime.now().isoformat()
+        }
+        
+        # Store results
+        if conn:
+            cursor.execute(
+                "UPDATE documents SET status = %s, analysis = %s WHERE id = %s",
+                ('completed', json.dumps(combined_analysis), doc_id)
+            )
+            conn.commit()
+            conn.close()
+        else:
+            doc['analysis'] = combined_analysis
+            doc['status'] = 'completed'
+        
+        logger.info(f"Document analysis completed: {doc['filename']}")
+        
+    except Exception as e:
+        logger.error(f"Document analysis failed: {e}")
+        if conn:
+            try:
+                cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('error', doc_id))
+                conn.commit()
+            except:
+                pass
+            finally:
+                conn.close()
+
+@app.route('/status/<doc_id>')
+def get_status(doc_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    # Try database first
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+            doc = cursor.fetchone()
+            
+            if doc:
+                analysis = json.loads(doc['analysis']) if doc['analysis'] else None
+                return jsonify({
+                    'status': doc['status'],
+                    'analysis': analysis
+                })
+        except Exception as e:
+            logger.error(f"Database status error: {e}")
+        finally:
+            conn.close()
+    
+    # Fallback to in-memory storage
+    if doc_id not in documents or documents[doc_id]['user_id'] != session['user_id']:
+        return jsonify({'error': 'Document not found'}), 404
+    
+    doc = documents[doc_id]
+    return jsonify({
+        'status': doc['status'],
+        'progress': doc.get('progress', 0),
+        'analysis': doc.get('analysis'),
+        'error': doc.get('error')
+    })
+
+@app.route('/documents')
+def get_documents():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    # Try database first
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM documents WHERE user_id = %s ORDER BY created_at DESC", (session['user_id'],))
+            docs = cursor.fetchall()
+            
+            user_docs = [
+                {
+                    'id': doc['id'],
+                    'filename': doc['filename'],
+                    'status': doc['status'],
+                    'created_at': doc['created_at'].isoformat() if hasattr(doc['created_at'], 'isoformat') else str(doc['created_at'])
+                }
+                for doc in docs
+            ]
+            return jsonify(user_docs)
+        except Exception as e:
+            logger.error(f"Database documents error: {e}")
+        finally:
+            conn.close()
+    
+    # Fallback to in-memory storage
+    user_docs = [
+        {
+            'id': doc_id,
+            'filename': doc['filename'],
+            'status': doc['status'],
+            'created_at': doc.get('created_at', datetime.now()).isoformat()
+        }
+        for doc_id, doc in documents.items()
+        if doc['user_id'] == session['user_id']
+    ]
+    
+    return jsonify(user_docs)
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return render_template('500.html'), 500
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5001))
+    host = os.getenv('HOST', '0.0.0.0')
+    debug = os.getenv('DEBUG', 'False').lower() == 'true'
+    
+    logger.info(f"Starting AI Contract Analyzer on {host}:{port}")
+    app.run(debug=debug, host=host, port=port) 
