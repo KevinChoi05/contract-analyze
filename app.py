@@ -30,19 +30,24 @@ import platform
 try:
     import easyocr
     EASYOCR_AVAILABLE = True
+    print("✅ EasyOCR is available")
 except ImportError:
     EASYOCR_AVAILABLE = False
     easyocr = None
+    print("❌ EasyOCR is not installed - OCR functionality will be limited")
 
 try:
     import pytesseract
     TESSERACT_AVAILABLE = True
+    print("✅ Tesseract is available")
 except ImportError:
     TESSERACT_AVAILABLE = False
     pytesseract = None
+    print("❌ Tesseract is not installed - OCR functionality will be limited")
 
 # Load environment variables
-load_dotenv()
+if os.getenv('FLASK_ENV') != 'production':
+    load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -406,7 +411,7 @@ def login():
         if conn:
             try:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+                cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
                 user = cursor.fetchone()
                 
                 if user and check_password_hash(user['password_hash'], password):
@@ -418,12 +423,6 @@ def login():
                 logger.error(f"Database login error: {e}")
             finally:
                 conn.close()
-        
-        # Fallback to in-memory storage
-        if username in users and check_password_hash(users[username]['password'], password):
-            session['user_id'] = username
-            session['username'] = username
-            return redirect(url_for('index'))
         
         flash('Invalid username or password')
         logger.warning(f"Failed login attempt for user: {username}")
