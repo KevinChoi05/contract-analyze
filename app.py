@@ -23,6 +23,8 @@ import redis
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import sqlite3
+from werkzeug.serving import run_simple
+import platform
 
 # Optional imports with graceful fallbacks
 try:
@@ -435,50 +437,62 @@ def register():
         password = request.form['password']
         
         if len(password) < 6:
-            flash('Password must be at least 6 characters long')
+            flash('Password must be at least 6 characters long', 'error')
             return render_template('register.html')
         
-        # Try database first
         conn = get_db_connection()
         if conn:
+            # --- Database Logic ---
             try:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+                # Use '?' for SQLite, which is the default DB type
+                cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
                 if cursor.fetchone():
-                    flash('Username already exists')
+                    flash('Username already exists', 'error')
                     return render_template('register.html')
                 
                 password_hash = generate_password_hash(password)
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+                    "INSERT INTO users (username, password_hash) VALUES (?, ?)",
                     (username, password_hash)
                 )
                 conn.commit()
                 
-                user_id = cursor.lastrowid
-                session['user_id'] = user_id
-                session['username'] = username
-                logger.info(f"New user registered: {username}")
+                # Fetch the new user's ID to log them in
+                cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+                user = cursor.fetchone()
+                if user:
+                    session['user_id'] = user['id']
+                    session['username'] = username
+                
+                flash('Registration successful! You are now logged in.', 'success')
                 return redirect(url_for('index'))
                 
             except Exception as e:
                 logger.error(f"Database registration error: {e}")
-                flash('Registration failed. Please try again.')
+                flash('Registration failed due to a database error. Please try again.', 'error')
+                return render_template('register.html')
             finally:
                 conn.close()
         
-        # Fallback to in-memory storage
-        if username in users:
-            flash('Username already exists')
+        # Fallback to in-memory storage only if DB connection failed
         else:
+            logger.info("Database not connected. Using in-memory storage for registration.")
+            if username in users:
+                flash('Username already exists', 'error')
+                return render_template('register.html')
+
+            user_id = f"mem_{len(users) + 1}"
             users[username] = {
+                'id': user_id,
                 'password': generate_password_hash(password),
                 'created_at': datetime.now()
             }
-            session['user_id'] = username
+            session['user_id'] = user_id
             session['username'] = username
+            flash('Registration successful! You are now logged in.', 'success')
             return redirect(url_for('index'))
-    
+
     return render_template('register.html')
 
 @app.route('/logout')
@@ -697,9 +711,26 @@ def internal_error(error):
     return render_template('500.html'), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5001))
-    host = os.getenv('HOST', '0.0.0.0')
-    debug = os.getenv('DEBUG', 'False').lower() == 'true'
+    port = int(os.environ.get("PORT", 5001))
     
-    logger.info(f"Starting AI Contract Analyzer on {host}:{port}")
-    app.run(debug=debug, host=host, port=port) 
+    # Use Werkzeug's development server on Windows for local testing
+    if platform.system() == "Windows":
+        print("--- Starting Development Server on Windows ---")
+        print(f"Listening on: http://127.0.0.1:{port}")
+        print("-------------------------------------------")
+        run_simple(
+            '127.0.0.1', 
+            port, 
+            app, 
+            use_reloader=True, 
+            use_debugger=True, 
+            threaded=True
+        )
+    else:
+        # On other systems (like Railway), this script can be run with Gunicorn directly.
+        # The Dockerfile CMD ["gunicorn", "app:app", ...] will handle this in production.
+        print("--- Starting Development Server ---")
+        print(f"Listening on: http://0.0.0.0:{port}")
+        print("For production, run with a WSGI server like Gunicorn.")
+        print("---------------------------------")
+        app.run(debug=True, host='0.0.0.0', port=port)
