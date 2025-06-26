@@ -117,83 +117,63 @@ else:
     reader = None
     logger.warning("EasyOCR not installed")
 
-# In-memory storage (fallback)
-users = {}
-documents = {}
+# In-memory storage (fallback) - REMOVED FOR PRODUCTION
+# users = {}
+# documents = {}
 
 def get_db_connection():
-    """Get database connection"""
+    """Get a persistent database connection.
+    This function now exclusively connects to PostgreSQL and raises
+    an exception if the connection fails, ensuring the database is
+    a hard dependency for the application.
+    """
     try:
-        if os.getenv('DB_TYPE', 'sqlite') == 'postgres':
-            conn = psycopg2.connect(**DB_CONFIG)
-            conn.cursor_factory = RealDictCursor
-        else:
-            conn = sqlite3.connect('contract_analyzer.db')
-            conn.row_factory = sqlite3.Row
+        conn = psycopg2.connect(**DB_CONFIG)
+        logger.info("Database connection established.")
         return conn
     except Exception as e:
-        logger.error(f"Database connection failed: {e}")
-        return None
+        logger.critical(f"DATABASE CONNECTION FAILED: {e}")
+        # In a production environment, you might want the app to fail fast
+        # if it can't connect to the database.
+        raise e
 
 def init_database():
-    """Initialize database tables"""
-    conn = get_db_connection()
-    if not conn:
-        return
-    
+    """Initialize database tables for PostgreSQL."""
+    conn = None
     try:
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        if os.getenv('DB_TYPE', 'sqlite') == 'postgres':
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username VARCHAR(50) UNIQUE NOT NULL,
-                    password_hash VARCHAR(255) NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS documents (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER REFERENCES users(id),
-                    filename VARCHAR(255) NOT NULL,
-                    filepath VARCHAR(500) NOT NULL,
-                    status VARCHAR(20) DEFAULT 'processing',
-                    analysis JSONB,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-        else:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS documents (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    filename TEXT NOT NULL,
-                    filepath TEXT NOT NULL,
-                    status TEXT DEFAULT 'processing',
-                    analysis TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (id)
-                )
-            """)
+        # User table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Document table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                filename VARCHAR(255) NOT NULL,
+                filepath VARCHAR(500) NOT NULL,
+                status VARCHAR(20) DEFAULT 'processing',
+                analysis JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
         conn.commit()
-        logger.info("Database initialized successfully")
+        logger.info("Database initialized successfully for PostgreSQL")
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 # Initialize database
 init_database()
@@ -406,22 +386,23 @@ def login():
         username = request.form['username']
         password = request.form['password']
         
-        # Try database first
-        conn = get_db_connection()
-        if conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-                user = cursor.fetchone()
-                
-                if user and check_password_hash(user['password_hash'], password):
-                    session['user_id'] = user['id']
-                    session['username'] = username
-                    logger.info(f"User {username} logged in successfully")
-                    return redirect(url_for('index'))
-            except Exception as e:
-                logger.error(f"Database login error: {e}")
-            finally:
+        conn = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cursor.fetchone()
+            
+            if user and check_password_hash(user['password_hash'], password):
+                session['user_id'] = user['id']
+                session['username'] = username
+                logger.info(f"User {username} logged in successfully")
+                return redirect(url_for('index'))
+        except Exception as e:
+            logger.error(f"Database login error: {e}")
+            flash('An error occurred during login. Please try again.', 'error')
+        finally:
+            if conn:
                 conn.close()
         
         flash('Invalid username or password')
@@ -439,58 +420,40 @@ def register():
             flash('Password must be at least 6 characters long', 'error')
             return render_template('register.html')
         
-        conn = get_db_connection()
-        if conn:
-            # --- Database Logic ---
-            try:
-                cursor = conn.cursor()
-                # Use '?' for SQLite, which is the default DB type
-                cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
-                if cursor.fetchone():
-                    flash('Username already exists', 'error')
-                    return render_template('register.html')
-                
-                password_hash = generate_password_hash(password)
-                cursor.execute(
-                    "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                    (username, password_hash)
-                )
-                conn.commit()
-                
-                # Fetch the new user's ID to log them in
-                cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
-                user = cursor.fetchone()
-                if user:
-                    session['user_id'] = user['id']
-                    session['username'] = username
-                
-                flash('Registration successful! You are now logged in.', 'success')
-                return redirect(url_for('index'))
-                
-            except Exception as e:
-                logger.error(f"Database registration error: {e}")
-                flash('Registration failed due to a database error. Please try again.', 'error')
-                return render_template('register.html')
-            finally:
-                conn.close()
-        
-        # Fallback to in-memory storage only if DB connection failed
-        else:
-            logger.info("Database not connected. Using in-memory storage for registration.")
-            if username in users:
+        conn = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+            # Check if user exists
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            if cursor.fetchone():
                 flash('Username already exists', 'error')
                 return render_template('register.html')
-
-            user_id = f"mem_{len(users) + 1}"
-            users[username] = {
-                'id': user_id,
-                'password': generate_password_hash(password),
-                'created_at': datetime.now()
-            }
+            
+            # Insert new user
+            password_hash = generate_password_hash(password)
+            cursor.execute(
+                "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
+                (username, password_hash)
+            )
+            user_id = cursor.fetchone()['id']
+            conn.commit()
+            
+            # Log the user in
             session['user_id'] = user_id
             session['username'] = username
+            
             flash('Registration successful! You are now logged in.', 'success')
             return redirect(url_for('index'))
+            
+        except Exception as e:
+            logger.error(f"Database registration error: {e}")
+            flash('Registration failed due to a database error. Please try again.', 'error')
+            return render_template('register.html')
+        finally:
+            if conn:
+                conn.close()
 
     return render_template('register.html')
 
@@ -516,70 +479,53 @@ def upload_file():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        # Start analysis in background
-        doc_id = f"doc_{int(time.time())}"
-        
-        # Store in database if available
-        conn = get_db_connection()
-        if conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO documents (user_id, filename, filepath, status) VALUES (?, ?, ?, ?)",
-                    (session['user_id'], filename, filepath, 'processing')
-                )
-                conn.commit()
-                doc_id = cursor.lastrowid
-            except Exception as e:
-                logger.error(f"Database upload error: {e}")
-            finally:
+        conn = None
+        doc_id = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO documents (user_id, filename, filepath, status) VALUES (%s, %s, %s, %s) RETURNING id",
+                (session['user_id'], filename, filepath, 'processing')
+            )
+            doc_id = cursor.fetchone()[0]
+            conn.commit()
+
+            # Start analysis in background
+            thread = threading.Thread(target=analyze_document, args=(doc_id,))
+            thread.start()
+            
+            logger.info(f"Document uploaded: {filename} (ID: {doc_id}) by user {session['username']}")
+            return jsonify({
+                'doc_id': doc_id,
+                'message': 'File uploaded successfully. Analysis in progress.'
+            })
+
+        except Exception as e:
+            logger.error(f"Database upload error: {e}")
+            return jsonify({'error': 'Failed to record document in database.'}), 500
+        finally:
+            if conn:
                 conn.close()
-        
-        # Fallback to in-memory storage
-        documents[doc_id] = {
-            'user_id': session['user_id'],
-            'filename': filename,
-            'filepath': filepath,
-            'status': 'processing',
-            'progress': 0
-        }
-        
-        thread = threading.Thread(target=analyze_document, args=(doc_id,))
-        thread.start()
-        
-        logger.info(f"Document uploaded: {filename} by user {session['username']}")
-        return jsonify({
-            'doc_id': doc_id,
-            'message': 'File uploaded successfully. Analysis in progress.'
-        })
     
     return jsonify({'error': 'Invalid file type. Please upload a PDF.'}), 400
 
 def analyze_document(doc_id):
     """Background function to analyze document"""
+    conn = None
     try:
-        # Get document from database or memory
+        # Get document from database
         conn = get_db_connection()
-        if conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM documents WHERE id = ?", (doc_id,))
-                doc = cursor.fetchone()
-                if not doc:
-                    return
-            except Exception as e:
-                logger.error(f"Database document fetch error: {e}")
-                conn.close()
-                return
-        else:
-            doc = documents.get(doc_id)
-            if not doc:
-                return
-        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM documents WHERE id = %s", (doc_id,))
+        doc = cursor.fetchone()
+        if not doc:
+            logger.error(f"Analysis failed: Document with ID {doc_id} not found.")
+            return
+
         # Update progress
-        if conn:
-            cursor.execute("UPDATE documents SET status = ? WHERE id = ?", ('processing', doc_id))
-            conn.commit()
+        cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('analyzing', doc_id))
+        conn.commit()
         
         # Extract text
         text = analyzer.extract_text_from_pdf(doc['filepath'])
@@ -599,107 +545,83 @@ def analyze_document(doc_id):
         }
         
         # Store results
-        if conn:
-            cursor.execute(
-                "UPDATE documents SET status = ?, analysis = ? WHERE id = ?",
-                ('completed', json.dumps(combined_analysis), doc_id)
-            )
-            conn.commit()
-            conn.close()
-        else:
-            doc['analysis'] = combined_analysis
-            doc['status'] = 'completed'
+        cursor.execute(
+            "UPDATE documents SET status = %s, analysis = %s WHERE id = %s",
+            ('completed', json.dumps(combined_analysis), doc_id)
+        )
+        conn.commit()
         
-        logger.info(f"Document analysis completed: {doc['filename']}")
+        logger.info(f"Document analysis completed: {doc['filename']} (ID: {doc_id})")
         
     except Exception as e:
-        logger.error(f"Document analysis failed: {e}")
+        logger.error(f"Document analysis failed for doc_id {doc_id}: {e}")
         if conn:
             try:
-                cursor.execute("UPDATE documents SET status = ? WHERE id = ?", ('error', doc_id))
+                # Use a new cursor for error updating if the previous one failed
+                error_cursor = conn.cursor()
+                error_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('error', doc_id))
                 conn.commit()
-            except:
-                pass
-            finally:
-                conn.close()
+            except Exception as final_e:
+                logger.error(f"Failed to even update status to error for doc_id {doc_id}: {final_e}")
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/status/<doc_id>')
 def get_status(doc_id):
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
-    # Try database first
-    conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (doc_id, session['user_id']))
-            doc = cursor.fetchone()
-            
-            if doc:
-                analysis = json.loads(doc['analysis']) if doc['analysis'] else None
-                return jsonify({
-                    'status': doc['status'],
-                    'analysis': analysis
-                })
-        except Exception as e:
-            logger.error(f"Database status error: {e}")
-        finally:
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+        doc = cursor.fetchone()
+        
+        if doc:
+            analysis = doc['analysis'] if doc['analysis'] else None
+            return jsonify({
+                'status': doc['status'],
+                'analysis': analysis
+            })
+        else:
+            return jsonify({'error': 'Document not found'}), 404
+    except Exception as e:
+        logger.error(f"Database status error: {e}")
+        return jsonify({'error': 'Could not retrieve status.'}), 500
+    finally:
+        if conn:
             conn.close()
-    
-    # Fallback to in-memory storage
-    if doc_id not in documents or documents[doc_id]['user_id'] != session['user_id']:
-        return jsonify({'error': 'Document not found'}), 404
-    
-    doc = documents[doc_id]
-    return jsonify({
-        'status': doc['status'],
-        'progress': doc.get('progress', 0),
-        'analysis': doc.get('analysis'),
-        'error': doc.get('error')
-    })
 
 @app.route('/documents')
 def get_documents():
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
-    # Try database first
-    conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC", (session['user_id'],))
-            docs = cursor.fetchall()
-            
-            user_docs = [
-                {
-                    'id': doc['id'],
-                    'filename': doc['filename'],
-                    'status': doc['status'],
-                    'created_at': doc['created_at'].isoformat() if hasattr(doc['created_at'], 'isoformat') else str(doc['created_at'])
-                }
-                for doc in docs
-            ]
-            return jsonify(user_docs)
-        except Exception as e:
-            logger.error(f"Database documents error: {e}")
-        finally:
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT id, filename, status, created_at FROM documents WHERE user_id = %s ORDER BY created_at DESC", (session['user_id'],))
+        docs = cursor.fetchall()
+        
+        user_docs = [
+            {
+                'id': doc['id'],
+                'filename': doc['filename'],
+                'status': doc['status'],
+                'created_at': doc['created_at'].isoformat()
+            }
+            for doc in docs
+        ]
+        return jsonify(user_docs)
+    except Exception as e:
+        logger.error(f"Database documents error: {e}")
+        return jsonify({'error': 'Could not retrieve documents.'}), 500
+    finally:
+        if conn:
             conn.close()
-    
-    # Fallback to in-memory storage
-    user_docs = [
-        {
-            'id': doc_id,
-            'filename': doc['filename'],
-            'status': doc['status'],
-            'created_at': doc.get('created_at', datetime.now()).isoformat()
-        }
-        for doc_id, doc in documents.items()
-        if doc['user_id'] == session['user_id']
-    ]
-    
-    return jsonify(user_docs)
 
 @app.errorhandler(404)
 def not_found_error(error):
