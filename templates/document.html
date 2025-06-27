@@ -1,53 +1,125 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contract Analysis - {{ doc['filename'] }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body { background-color: #f8f9fa; }
-        .header { background-color: #ffffff; padding: 1rem; border-bottom: 1px solid #dee2e6; }
-        .card-header { font-weight: bold; }
-        .risk-card { border-left-width: 5px; }
-        .risk-high { border-left-color: #dc3545; }
-        .risk-medium { border-left-color: #ffc107; }
-        .risk-low { border-left-color: #198754; }
-        .quote {
-            background-color: #e9ecef;
-            padding: 1rem;
-            border-radius: 0.25rem;
-            font-family: monospace;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-    </style>
-</head>
-<body>
+{% extends "base.html" %}
 
-    <div class="header d-flex justify-content-between align-items-center">
-        <h4 class="mb-0">AI Contract Analyzer</h4>
-        <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary">Logout</a>
-    </div>
+{% block title %}Contract Analysis - {{ doc['filename'] }}{% endblock %}
 
-    <div class="container mt-4">
-        <a href="{{ url_for('index') }}"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
-        <h2 class="mt-3">{{ doc['filename'] }}</h2>
-        <hr>
-    </div>
+{% block extra_css %}
+<style>
+    .risk-card { 
+        border-left-width: 5px; 
+        transition: all 0.3s ease;
+    }
+    .risk-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+    }
+    .risk-high { border-left-color: #dc3545; }
+    .risk-medium { border-left-color: #ffc107; }
+    .risk-low { border-left-color: #198754; }
+    .quote {
+        background: linear-gradient(135deg, #f8f9fc 0%, #f1f3f8 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        font-family: 'Courier New', monospace;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        border: 2px solid #e3e6f0;
+        position: relative;
+    }
+    .quote::before {
+        content: '"';
+        position: absolute;
+        top: -10px;
+        left: 15px;
+        font-size: 3rem;
+        color: #4e73df;
+        background: white;
+        padding: 0 10px;
+    }
+    .progress-modern {
+        height: 20px;
+        border-radius: 10px;
+        background: #e3e6f0;
+        overflow: hidden;
+    }
+    .progress-bar-modern {
+        background: linear-gradient(90deg, #4e73df, #36b9cc);
+        border-radius: 10px;
+        transition: width 0.6s ease;
+    }
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        color: #4e73df;
+        text-decoration: none;
+        font-weight: 600;
+        padding: 8px 16px;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        background: rgba(78, 115, 223, 0.1);
+    }
+    .back-link:hover {
+        background: rgba(78, 115, 223, 0.2);
+        color: #2653d3;
+        transform: translateX(-3px);
+    }
+    .document-header {
+        background: white;
+        border-radius: 15px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    .risk-score-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 2rem;
+        text-align: center;
+    }
+    .risk-score-number {
+        font-size: 4rem;
+        font-weight: bold;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+</style>
+{% endblock %}
 
-    <div id="loading" class="container mt-5" {% if doc.status == 'completed' %}style="display: none;"{% endif %}>
-        <h4 id="loading-status-text" class="text-center">Queueing for processing...</h4>
-        <div class="progress mt-3" style="height: 25px;">
-            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 5%;" aria-valuenow="5" aria-valuemin="0" aria-valuemax="100">5%</div>
+{% block content %}
+<div class="document-header">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <a href="{{ url_for('index') }}" class="back-link mb-3">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
+            <h2 class="mb-1 fw-bold">{{ doc['filename'] }}</h2>
+            <p class="text-muted mb-0">Contract Analysis Report</p>
         </div>
-        <p class="mt-3 text-muted text-center">Your document is being processed. This may take a few moments...</p>
+        <div class="text-end">
+            <div class="bg-primary bg-gradient rounded-3 p-3 d-inline-flex">
+                <i class="fas fa-file-contract text-white fa-2x"></i>
+            </div>
+        </div>
     </div>
+</div>
 
-    <div id="analysis-results" class="container mt-4" {% if doc.status != 'completed' %}style="display: none;"{% endif %}>
-        <!-- Analysis results will be populated here -->
+<div id="loading" class="card border-0 shadow-sm" {% if doc.status == 'completed' %}style="display: none;"{% endif %}>
+    <div class="card-body text-center p-5">
+        <div class="bg-info bg-gradient rounded-circle p-3 d-inline-flex mb-4">
+            <i class="fas fa-cogs fa-2x text-white"></i>
+        </div>
+        <h4 id="loading-status-text" class="fw-bold mb-3">Queueing for processing...</h4>
+        <div class="progress-modern mt-3 mb-4">
+            <div id="progress-bar" class="progress-bar-modern" role="progressbar" style="width: 5%;" aria-valuenow="5" aria-valuemin="0" aria-valuemax="100">
+                <span class="visually-hidden">5% Complete</span>
+            </div>
+        </div>
+        <p class="text-muted mb-0">Your document is being processed. This may take a few moments...</p>
     </div>
+</div>
+
+<div id="analysis-results" {% if doc.status != 'completed' %}style="display: none;"{% endif %}>
+    <!-- Analysis results will be populated here -->
+</div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -129,46 +201,68 @@
                 }
 
                 let resultsHTML = `
-                    <div class="row">
+                    <div class="row mb-4">
                         <div class="col-md-4">
-                            <div class="card text-center mb-4">
-                                <div class="card-header">Overall Risk Score</div>
-                                <div class="card-body">
-                                    <h1 class="display-4">${overallRiskScore}</h1>
-                                </div>
+                            <div class="risk-score-card border-0 shadow-sm mb-4">
+                                <h6 class="mb-3 opacity-75">Overall Risk Score</h6>
+                                <div class="risk-score-number">${overallRiskScore}</div>
+                                <p class="mb-0 opacity-75">Out of 100</p>
                             </div>
                         </div>
                         <div class="col-md-8">
-                             <div class="card mb-4">
-                                <div class="card-header">Executive Summary</div>
-                                <div class="card-body">
-                                    <p>${analysis.summary || "No summary provided."}</p>
+                             <div class="card border-0 shadow-sm mb-4">
+                                <div class="card-body p-4">
+                                    <div class="d-flex align-items-center mb-3">
+                                        <div class="bg-success bg-gradient rounded-3 p-2 me-3">
+                                            <i class="fas fa-chart-line text-white"></i>
+                                        </div>
+                                        <h5 class="card-title mb-0 fw-bold">Executive Summary</h5>
+                                    </div>
+                                    <p class="mb-0">${analysis.summary || "No summary provided."}</p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <h3>Identified Risk Clauses</h3>
+                    <div class="d-flex align-items-center mb-4">
+                        <div class="bg-warning bg-gradient rounded-3 p-2 me-3">
+                            <i class="fas fa-exclamation-triangle text-white"></i>
+                        </div>
+                        <h3 class="mb-0 fw-bold">Identified Risk Clauses</h3>
+                    </div>
                 `;
 
                 if (clauses.length > 0) {
                     clauses.forEach(risk => {
                         const riskColor = getRiskColor(risk.risk_score);
                         resultsHTML += `
-                            <div class="card risk-card risk-${riskColor} mb-3">
-                                <div class="card-header d-flex justify-content-between">
-                                    <span><i class="fas fa-exclamation-triangle"></i> ${risk.type}</span>
-                                    <span class="badge bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'}">${risk.risk_score} / 100</span>
+                            <div class="card risk-card risk-${riskColor} border-0 shadow-sm mb-4">
+                                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center py-3">
+                                    <div class="d-flex align-items-center">
+                                        <div class="bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'} bg-gradient rounded-3 p-2 me-3">
+                                            <i class="fas fa-exclamation-triangle text-white"></i>
+                                        </div>
+                                        <h5 class="mb-0 fw-bold">${risk.type}</h5>
+                                    </div>
+                                    <span class="badge bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'} px-3 py-2">${risk.risk_score} / 100</span>
                                 </div>
-                                <div class="card-body">
-                                    <h6 class="card-subtitle mb-2 text-muted">Risk Explanation</h6>
-                                    <p>${risk.clause || 'Not available.'}</p>
-                                    <h6 class="card-subtitle mb-2 text-muted">Consequences</h6>
-                                    <p>${risk.consequences || 'Not available.'}</p>
-                                    <h6 class="card-subtitle mb-2 text-muted">Recommendation</h6>
-                                    <p>${risk.mitigation || 'Not available.'}</p>
-                                    <h6 class="card-subtitle mb-2 text-muted">Relevant Text</h6>
-                                    <div class="quote">
-                                        ${risk.exact_text || 'Exact text not extracted.'}
+                                <div class="card-body p-4">
+                                    <div class="mb-4">
+                                        <h6 class="fw-semibold mb-2 text-primary">Risk Explanation</h6>
+                                        <p class="mb-0">${risk.clause || 'Not available.'}</p>
+                                    </div>
+                                    <div class="mb-4">
+                                        <h6 class="fw-semibold mb-2 text-danger">Consequences</h6>
+                                        <p class="mb-0">${risk.consequences || 'Not available.'}</p>
+                                    </div>
+                                    <div class="mb-4">
+                                        <h6 class="fw-semibold mb-2 text-success">Recommendation</h6>
+                                        <p class="mb-0">${risk.mitigation || 'Not available.'}</p>
+                                    </div>
+                                    <div>
+                                        <h6 class="fw-semibold mb-3 text-info">Relevant Contract Text</h6>
+                                        <div class="quote">
+                                            ${risk.exact_text || 'Exact text not extracted.'}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -197,5 +291,10 @@
             }
         });
     </script>
-</body>
-</html> 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Additional JavaScript for document page can go here
+</script>
+{% endblock %} 

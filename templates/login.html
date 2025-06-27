@@ -3,44 +3,46 @@
 {% block title %}Login - AI Contract Analyzer{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6 col-lg-4">
-        <div class="card">
+<div class="row justify-content-center min-vh-100 align-items-center">
+    <div class="col-md-6 col-lg-5 col-xl-4">
+        <div class="card border-0 shadow-lg">
             <div class="card-body p-5">
                 <div class="text-center mb-4">
-                    <i class="fas fa-robot fa-3x text-primary mb-3"></i>
-                    <h2 class="card-title">Welcome Back</h2>
+                    <div class="bg-primary bg-gradient rounded-circle p-3 d-inline-flex mb-3">
+                        <i class="fas fa-robot fa-2x text-white"></i>
+                    </div>
+                    <h2 class="card-title fw-bold mb-2">Welcome Back</h2>
                     <p class="text-muted">Sign in to your AI Contract Analyzer account</p>
                 </div>
                 
                 <form method="POST">
                     <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
+                        <label for="username" class="form-label fw-semibold">Username</label>
                         <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="fas fa-user"></i>
+                            <span class="input-group-text bg-light border-end-0">
+                                <i class="fas fa-user text-muted"></i>
                             </span>
-                            <input type="text" class="form-control" id="username" name="username" required>
+                            <input type="text" class="form-control border-start-0 ps-0" id="username" name="username" placeholder="Enter your username" required>
                         </div>
                     </div>
                     
                     <div class="mb-4">
-                        <label for="password" class="form-label">Password</label>
+                        <label for="password" class="form-label fw-semibold">Password</label>
                         <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="fas fa-lock"></i>
+                            <span class="input-group-text bg-light border-end-0">
+                                <i class="fas fa-lock text-muted"></i>
                             </span>
-                            <input type="password" class="form-control" id="password" name="password" required>
+                            <input type="password" class="form-control border-start-0 ps-0" id="password" name="password" placeholder="Enter your password" required>
                         </div>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary w-100 mb-3">
+                    <button type="submit" class="btn btn-primary w-100 mb-3 py-3 fw-semibold">
                         <i class="fas fa-sign-in-alt me-2"></i>Sign In
                     </button>
                     
                     <div class="text-center">
-                        <p class="mb-0">Don't have an account? 
-                            <a href="{{ url_for('register') }}" class="text-primary text-decoration-none">Register here</a>
+                        <p class="mb-0 text-muted">Don't have an account? 
+                            <a href="{{ url_for('register') }}" class="text-primary text-decoration-none fw-semibold">Register here</a>
                         </p>
                     </div>
                 </form>
