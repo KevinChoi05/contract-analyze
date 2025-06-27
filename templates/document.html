@@ -84,7 +84,7 @@
                         if (data.status === 'completed' && data.analysis) {
                             loadingDiv.style.display = 'none';
                             resultsDiv.style.display = 'block';
-                            renderAnalysis(data.analysis.openai);
+                            renderAnalysis(data.analysis);
                         } else if (data.status === 'error') {
                             loadingDiv.innerHTML = '<p class="text-danger text-center">An error occurred during analysis. Please try another document.</p>';
                         } else {
@@ -114,10 +114,18 @@
                         <div class="alert alert-danger">
                             <h4><i class="fas fa-exclamation-triangle"></i> Analysis Failed</h4>
                             <p>The analysis could not be completed. The server reported the following issue:</p>
-                            <p><strong>${analysis.executive_summary}</strong></p>
+                            <p><strong>${analysis.error}</strong></p>
                         </div>
                     `;
                     return;
+                }
+
+                // Calculate overall risk score as an average of clause risks, or display a placeholder
+                const clauses = analysis.clauses || [];
+                let overallRiskScore = "N/A";
+                if (clauses.length > 0) {
+                    const totalScore = clauses.reduce((sum, clause) => sum + (clause.risk_score || 0), 0);
+                    overallRiskScore = Math.round(totalScore / clauses.length);
                 }
 
                 let resultsHTML = `
@@ -126,7 +134,7 @@
                             <div class="card text-center mb-4">
                                 <div class="card-header">Overall Risk Score</div>
                                 <div class="card-body">
-                                    <h1 class="display-4">${analysis.overall_risk_score}</h1>
+                                    <h1 class="display-4">${overallRiskScore}</h1>
                                 </div>
                             </div>
                         </div>
@@ -134,7 +142,7 @@
                              <div class="card mb-4">
                                 <div class="card-header">Executive Summary</div>
                                 <div class="card-body">
-                                    <p>${analysis.executive_summary}</p>
+                                    <p>${analysis.summary || "No summary provided."}</p>
                                 </div>
                             </div>
                         </div>
@@ -142,23 +150,25 @@
                     <h3>Identified Risk Clauses</h3>
                 `;
 
-                if (analysis.identified_risks && analysis.identified_risks.length > 0) {
-                    analysis.identified_risks.forEach(risk => {
-                        const riskColor = getRiskColor(risk.risk_severity);
+                if (clauses.length > 0) {
+                    clauses.forEach(risk => {
+                        const riskColor = getRiskColor(risk.risk_score);
                         resultsHTML += `
                             <div class="card risk-card risk-${riskColor} mb-3">
                                 <div class="card-header d-flex justify-content-between">
-                                    <span><i class="fas fa-exclamation-triangle"></i> ${risk.clause_type}</span>
-                                    <span class="badge bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'}">${risk.risk_severity} / 100</span>
+                                    <span><i class="fas fa-exclamation-triangle"></i> ${risk.type}</span>
+                                    <span class="badge bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'}">${risk.risk_score} / 100</span>
                                 </div>
                                 <div class="card-body">
                                     <h6 class="card-subtitle mb-2 text-muted">Risk Explanation</h6>
-                                    <p>${risk.risk_explanation}</p>
+                                    <p>${risk.clause || 'Not available.'}</p>
+                                    <h6 class="card-subtitle mb-2 text-muted">Consequences</h6>
+                                    <p>${risk.consequences || 'Not available.'}</p>
                                     <h6 class="card-subtitle mb-2 text-muted">Recommendation</h6>
-                                    <p>${risk.mitigation_recommendation}</p>
+                                    <p>${risk.mitigation || 'Not available.'}</p>
                                     <h6 class="card-subtitle mb-2 text-muted">Relevant Text</h6>
                                     <div class="quote">
-                                        ${risk.clause_quote}
+                                        ${risk.exact_text || 'Exact text not extracted.'}
                                     </div>
                                 </div>
                             </div>
@@ -172,7 +182,7 @@
 
             // Initial setup based on server-rendered data
             if (initialStatus === 'completed' && initialAnalysis) {
-                renderAnalysis(initialAnalysis.openai);
+                renderAnalysis(initialAnalysis);
             } else if (initialStatus !== 'completed' && initialStatus !== 'error') {
                 const initialStatusInfo = statusMap[initialStatus];
                 if (initialStatusInfo) {

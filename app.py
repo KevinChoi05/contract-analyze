@@ -25,6 +25,8 @@ from psycopg2.extras import RealDictCursor
 import sqlite3
 from werkzeug.serving import run_simple
 import platform
+import numpy as np
+import cv2
 
 # Optional imports with graceful fallbacks
 try:
@@ -186,147 +188,123 @@ def init_database():
 # Initialize database on startup
 init_database()
 
-class ContractAnalyzer:
-    def __init__(self):
-        self.openai_client = openai.OpenAI(api_key=openai.api_key) if openai.api_key else None
+# --- Advanced Document Processing Engine ---
+
+def extract_text_with_easyocr(filepath, languages=['en']):
+    """Extract text from a PDF or image using EasyOCR with enhanced preprocessing."""
+    if not EASYOCR_AVAILABLE:
+        logger.warning("EasyOCR text extraction skipped: library not available.")
+        return ""
+    try:
+        reader = easyocr.Reader(languages, gpu=False)
+        images = fitz.open(filepath)
+        full_text = []
+        for page_num, page in enumerate(images):
+            pix = page.get_pixmap(dpi=300)
+            img_data = pix.tobytes("png")
+            img = Image.open(io.BytesIO(img_data))
+            img_np = np.array(img)
+            
+            # Simple preprocessing
+            img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+            results = reader.readtext(img_gray, detail=0, paragraph=True)
+            full_text.extend(results)
         
-    def extract_text_from_pdf(self, pdf_path):
-        """Extract text from PDF using multiple methods"""
-        try:
-            # Method 1: PyMuPDF
-            doc = fitz.open(pdf_path)
-            text = ""
-            for page in doc:
-                text += page.get_text()
-            doc.close()
-            
-            if len(text.strip()) > 100:  # If we got substantial text
-                return text
-                
-            # Method 2: OCR with EasyOCR (if available)
-            if reader and EASYOCR_AVAILABLE:
-                doc = fitz.open(pdf_path)
-                ocr_text = ""
-                for page in doc:
-                    pix = page.get_pixmap()
-                    img_data = pix.tobytes("png")
-                    img = Image.open(io.BytesIO(img_data))
-                    results = reader.readtext(img)
-                    for (bbox, text, prob) in results:
-                        if prob > 0.5:  # Confidence threshold
-                            ocr_text += text + " "
-                doc.close()
-                
-                if len(ocr_text.strip()) > 100:
-                    return ocr_text
-                    
-            # Method 3: Tesseract OCR (if available)
-            if TESSERACT_AVAILABLE:
-                doc = fitz.open(pdf_path)
-                tesseract_text = ""
-                for page in doc:
-                    pix = page.get_pixmap()
-                    img_data = pix.tobytes("png")
-                    img = Image.open(io.BytesIO(img_data))
-                    tesseract_text += pytesseract.image_to_string(img) + " "
-                doc.close()
-                
-                return tesseract_text
-            
+        return " ".join(full_text)
+    except Exception as e:
+        logger.error(f"Error in EasyOCR extraction: {e}")
+        return ""
+
+def extract_text_robust(filepath):
+    """Enhanced text extraction, prioritizing methods for accuracy."""
+    logger.info(f"Starting robust text extraction for: {filepath}")
+    text = ""
+    # Method 1: PyMuPDF (Fast, good for digital PDFs)
+    try:
+        with fitz.open(filepath) as doc:
+            text = "".join(page.get_text() for page in doc)
+        if len(text.strip()) > 100:
+            logger.info("PyMuPDF extraction successful.")
             return text
-            
-        except Exception as e:
-            logger.error(f"Error extracting text: {e}")
-            return ""
+    except Exception as e:
+        logger.error(f"PyMuPDF extraction failed: {e}")
+
+    # Method 2: EasyOCR (For scanned documents)
+    logger.info("PyMuPDF found minimal text, trying EasyOCR...")
+    try:
+        text = extract_text_with_easyocr(filepath)
+        if len(text.strip()) > 100:
+            logger.info("EasyOCR extraction successful.")
+            return text
+    except Exception as e:
+        logger.error(f"EasyOCR extraction failed during robust extraction: {e}")
+
+    return text if text else "Error: Could not extract readable text from this document."
+
+def analyze_contract(text_content):
+    """Analyzes contract text using DeepSeek and returns structured JSON."""
+    if not DEEPSEEK_API_KEY:
+        return {"error": "DeepSeek API Key not configured."}
     
-    def analyze_contract_with_openai(self, text):
-        """Analyze contract using OpenAI GPT-4o Mini. Returns analysis or error dict."""
-        if not self.openai_client:
-            msg = "OpenAI API client not configured. An API key is required."
-            logger.error(msg)
-            return {
-                "error": True,
-                "executive_summary": msg,
-                "identified_risks": []
-            }
-            
-        try:
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": """You are a world-class expert contract analyst AI. Your task is to conduct a comprehensive risk analysis of the provided legal document.
-
-Analyze the following contract and identify:
-1.  **Key Risk Clauses:** Identify clauses that pose a financial, legal, operational, or compliance risk.
-2.  **Be Selective:** Based on the document's length and complexity, decide how many risk clauses are truly significant. Focus only on the most critical issues that require attention. Do not list minor or standard clauses.
-3.  **Provide Analysis in JSON format:**
-
-Your output must be a valid JSON object with the following structure:
+    system_message = """You are an expert contract risk analyst. Your job is to identify business risks and provide EXACT SOURCE LOCATIONS.
+CRITICAL REQUIREMENTS:
+1. For each risk you identify, you MUST provide the exact sentence number where it appears
+2. Use the [number] format from the text to reference source locations
+3. Copy the EXACT text phrase that contains the risk (for highlighting)
+4. Calculate precise 0-100 risk scores using the methodology below
+RISK SCORING (0-100 Scale):
+• 0-30: SAFE - Minimal impact, routine terms
+• 31-69: WARNING - Moderate concern, needs attention  
+• 70-100: UNSAFE - Critical threat, immediate action required
+SCORING CRITERIA (weighted average):
+1. Financial Impact (30%): 0-100 based on potential costs
+2. Business Disruption (25%): 0-100 based on operational impact
+3. Legal/Compliance Risk (20%): 0-100 based on legal exposure
+4. Likelihood (15%): 0-100 based on probability of occurrence
+5. Mitigation Difficulty (10%): 0-100 based on how hard to resolve
+JSON RESPONSE FORMAT:
+```json
 {
-    "overall_risk_score": "A score from 0 (no risk) to 100 (extreme risk), representing your overall assessment of the document.",
-    "executive_summary": "A brief, high-level summary of the contract's purpose and most critical risks. This should be easy for a non-lawyer to understand.",
-    "identified_risks": [
-        {
-            "clause_type": "Financial | Legal | Operational | Compliance | etc.",
-            "risk_severity": "A score from 0 to 100 for this specific clause.",
-            "clause_quote": "The exact, verbatim text from the contract that constitutes the risk. This is critical for highlighting.",
-            "risk_explanation": "In simple terms, explain what this clause means and why it's a risk. Describe the potential negative impact or 'damage' it could cause.",
-            "mitigation_recommendation": "Suggest a concrete action or negotiation point to reduce this specific risk."
-        }
-    ]
-}"""},
-                    {"role": "user", "content": f"Please analyze this contract:\n\n{text[:12000]}"}
-                ],
-                max_tokens=4000
-            )
-            
-            return json.loads(response.choices[0].message.content)
-            
-        except Exception as e:
-            msg = f"OpenAI API error: {e}"
-            logger.error(msg)
-            return {
-                "error": True,
-                "executive_summary": msg,
-                "identified_risks": []
-            }
+  "summary": "A brief, one-paragraph executive summary of the contract's purpose and key risks.",
+  "clauses": [
+    {
+      "id": 1,
+      "exact_text": "Late payment will incur 5% monthly penalty plus immediate acceleration",
+      "type": "Payment Default Penalties", 
+      "risk_score": 75,
+      "risk_category": "Unsafe",
+      "clause": "Business-friendly description of the risk",
+      "consequences": "What could happen to the business",
+      "mitigation": "How to reduce this risk"
+    }
+  ]
+}
+```"""
+    prompt = f"ANALYZE this contract and identify the TOP 8-10 MOST CRITICAL business risks. Return a valid JSON object.\n\nCONTRACT TEXT:\n{text_content[:24000]}"
     
-    def analyze_contract_with_deepseek(self, text):
-        """Analyze contract using DeepSeek. Returns analysis or error dict."""
-        if not DEEPSEEK_API_KEY:
-            return {"error": True, "detail": "DeepSeek API Key not configured."}
-            
-        try:
-            headers = {
-                'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
-                'Content-Type': 'application/json'
-            }
-            
-            data = {
-                "model": "deepseek-chat",
-                "messages": [
-                    {"role": "system", "content": "You are an expert contract analyst. Provide detailed risk analysis."},
-                    {"role": "user", "content": f"Analyze this contract for risks:\n\n{text[:8000]}"}
-                ],
-                "max_tokens": 2000
-            }
-            
-            response = requests.post(
-                'https://api.deepseek.com/v1/chat/completions',
-                headers=headers,
-                json=data
-            )
-            
-            if response.status_code == 200:
-                return json.loads(response.json()['choices'][0]['message']['content'])
-            else:
-                return {"error": True, "detail": f"DeepSeek API returned status {response.status_code}"}
-                
-        except Exception as e:
-            logger.error(f"DeepSeek API error: {e}")
-            return {"error": True, "detail": f"DeepSeek API error: {e}"}
+    try:
+        client = openai.OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=4096,
+            temperature=0.1
+        )
+        response_text = response.choices[0].message.content
+        # Extract JSON from markdown code block
+        match = re.search(r'```json\s*([\s\S]*?)\s*```', response_text)
+        if match:
+            return json.loads(match.group(1))
+        else:
+            return json.loads(response_text) # Fallback to parsing the whole string
+    except Exception as e:
+        logger.error(f"Error in analyze_contract: {e}")
+        return {"error": f"Failed to analyze contract: {e}"}
 
-analyzer = ContractAnalyzer()
+# --- End of Advanced Engine ---
 
 @app.route('/health')
 def health_check():
@@ -535,51 +513,45 @@ def upload_file():
 
 def analyze_document(doc_id):
     """Background function to analyze document with progress updates."""
-    conn = None
+    
+    def update_status(status_message):
+        """Helper to update status in the DB."""
+        with get_db_connection() as status_conn:
+            with status_conn.cursor() as status_cursor:
+                status_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", (status_message, doc_id))
+                status_conn.commit()
+
     try:
         # Get document from database
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT * FROM documents WHERE id = %s", (doc_id,))
-        doc = cursor.fetchone()
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("SELECT * FROM documents WHERE id = %s", (doc_id,))
+                doc = cursor.fetchone()
+        
         if not doc:
             logger.error(f"Analysis failed: Document with ID {doc_id} not found.")
             return
 
-        def update_status(status):
-            """Helper to update status in the DB."""
-            with get_db_connection() as status_conn:
-                with status_conn.cursor() as status_cursor:
-                    status_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", (status, doc_id))
-                    status_conn.commit()
-
         # Start text extraction
         update_status('extracting_text')
-        text = analyzer.extract_text_from_pdf(doc['filepath'])
+        text = extract_text_robust(doc['filepath'])
+        if "Error:" in text:
+             raise Exception(text)
         
-        # Start OpenAI analysis
-        update_status('analyzing_openai')
-        openai_analysis = analyzer.analyze_contract_with_openai(text)
+        # Start analysis
+        update_status('analyzing')
+        analysis_result = analyze_contract(text)
         
-        # Start DeepSeek analysis
-        update_status('analyzing_deepseek')
-        deepseek_analysis = analyzer.analyze_contract_with_deepseek(text)
-        
-        # Combine analyses
-        update_status('combining_results')
-        combined_analysis = {
-            'openai': openai_analysis,
-            'deepseek': deepseek_analysis,
-            'text': text[:1000] + "..." if len(text) > 1000 else text,
-            'analyzed_at': datetime.now().isoformat()
-        }
-        
+        if analysis_result.get("error"):
+            raise Exception(analysis_result["error"])
+
         # Store results
+        update_status('completed')
         with get_db_connection() as final_conn:
             with final_conn.cursor() as final_cursor:
                 final_cursor.execute(
-                    "UPDATE documents SET status = %s, analysis = %s WHERE id = %s",
-                    ('completed', json.dumps(combined_analysis), doc_id)
+                    "UPDATE documents SET analysis = %s, status = 'completed' WHERE id = %s",
+                    (json.dumps(analysis_result), doc_id)
                 )
                 final_conn.commit()
         
@@ -588,15 +560,13 @@ def analyze_document(doc_id):
     except Exception as e:
         logger.error(f"Document analysis failed for doc_id {doc_id}: {e}")
         try:
+            # Mark as error in the database
             with get_db_connection() as error_conn:
                 with error_conn.cursor() as error_cursor:
-                    error_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('error', doc_id))
+                    error_cursor.execute("UPDATE documents SET status = 'error', analysis = %s WHERE id = %s", (json.dumps({'error': str(e)}), doc_id))
                     error_conn.commit()
         except Exception as final_e:
             logger.error(f"Failed to even update status to error for doc_id {doc_id}: {final_e}")
-    finally:
-        # The main connection is no longer needed as we use with-statements
-        pass
 
 @app.route('/status/<doc_id>')
 def get_status(doc_id):
