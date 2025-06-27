@@ -26,7 +26,7 @@ COPY . .
 RUN mkdir -p logs uploads flask_session
 
 # Expose port
-EXPOSE $PORT
+EXPOSE 5001
 
-# Start command
-CMD gunicorn app:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120 
+# Set the command to run the application using the PORT environment variable
+CMD /bin/sh -c "gunicorn --bind 0.0.0.0:${PORT:-5001} app:app" 
