@@ -37,7 +37,7 @@
         <hr>
     </div>
 
-    <div id="loading" class="container mt-5">
+    <div id="loading" class="container mt-5" {% if doc.status == 'completed' %}style="display: none;"{% endif %}>
         <h4 id="loading-status-text" class="text-center">Queueing for processing...</h4>
         <div class="progress mt-3" style="height: 25px;">
             <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 5%;" aria-valuenow="5" aria-valuemin="0" aria-valuemax="100">5%</div>
@@ -45,13 +45,16 @@
         <p class="mt-3 text-muted text-center">Your document is being processed. This may take a few moments...</p>
     </div>
 
-    <div id="analysis-results" class="container mt-4" style="display: none;">
+    <div id="analysis-results" class="container mt-4" {% if doc.status != 'completed' %}style="display: none;"{% endif %}>
         <!-- Analysis results will be populated here -->
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const docId = {{ doc['id'] }};
+            const initialStatus = '{{ doc.status }}';
+            const initialAnalysis = {{ doc.analysis|tojson if doc.analysis else 'null' }};
+            
             const loadingDiv = document.getElementById('loading');
             const resultsDiv = document.getElementById('analysis-results');
             const progressBar = document.getElementById('progress-bar');
@@ -59,9 +62,9 @@
 
             const statusMap = {
                 'processing': { percent: 5, text: 'Queueing for processing...' },
-                'extracting_text': { percent: 20, text: 'Extracting text from PDF...' },
-                'analyzing_openai': { percent: 50, text: 'Analyzing with Primary AI...' },
-                'analyzing_deepseek': { percent: 80, text: 'Cross-referencing with Secondary AI...' },
+                'extracting_text': { percent: 15, text: 'Extracting text from PDF...' },
+                'analyzing_openai': { percent: 45, text: 'Analyzing with Primary AI...' },
+                'analyzing_deepseek': { percent: 85, text: 'Cross-referencing with Secondary AI...' },
                 'combining_results': { percent: 95, text: 'Compiling final report...' },
                 'completed': { percent: 100, text: 'Analysis Complete!' }
             };
@@ -70,20 +73,18 @@
                 fetch(`/status/${docId}`)
                     .then(response => response.json())
                     .then(data => {
-                        const currentStatus = statusMap[data.status];
-                        if (currentStatus) {
-                            progressBar.style.width = `${currentStatus.percent}%`;
-                            progressBar.textContent = `${currentStatus.percent}%`;
-                            progressBar.setAttribute('aria-valuenow', currentStatus.percent);
-                            loadingStatusText.textContent = currentStatus.text;
+                        const currentStatusInfo = statusMap[data.status];
+                        if (currentStatusInfo) {
+                            progressBar.style.width = `${currentStatusInfo.percent}%`;
+                            progressBar.textContent = `${currentStatusInfo.percent}%`;
+                            progressBar.setAttribute('aria-valuenow', currentStatusInfo.percent);
+                            loadingStatusText.textContent = currentStatusInfo.text;
                         }
 
                         if (data.status === 'completed' && data.analysis) {
-                            setTimeout(() => {
-                                loadingDiv.style.display = 'none';
-                                resultsDiv.style.display = 'block';
-                                renderAnalysis(data.analysis.openai); // We'll focus on the primary AI's output
-                            }, 500);
+                            loadingDiv.style.display = 'none';
+                            resultsDiv.style.display = 'block';
+                            renderAnalysis(data.analysis.openai);
                         } else if (data.status === 'error') {
                             loadingDiv.innerHTML = '<p class="text-danger text-center">An error occurred during analysis. Please try another document.</p>';
                         } else {
@@ -157,7 +158,22 @@
                 }
                 resultsDiv.innerHTML = resultsHTML;
             }
-            checkStatus();
+
+            // Initial setup based on server-rendered data
+            if (initialStatus === 'completed' && initialAnalysis) {
+                renderAnalysis(initialAnalysis.openai);
+            } else if (initialStatus !== 'completed' && initialStatus !== 'error') {
+                const initialStatusInfo = statusMap[initialStatus];
+                if (initialStatusInfo) {
+                    progressBar.style.width = `${initialStatusInfo.percent}%`;
+                    progressBar.textContent = `${initialStatusInfo.percent}%`;
+                    progressBar.setAttribute('aria-valuenow', initialStatusInfo.percent);
+                    loadingStatusText.textContent = initialStatusInfo.text;
+                }
+                setTimeout(checkStatus, 1000); // Start polling
+            } else if (initialStatus === 'error') {
+                 loadingDiv.innerHTML = '<p class="text-danger text-center">An error occurred during analysis. Please try another document.</p>';
+            }
         });
     </script>
 </body>

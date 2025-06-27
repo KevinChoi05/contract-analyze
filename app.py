@@ -443,7 +443,7 @@ def document_page(doc_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT id, filename FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+        cursor.execute("SELECT id, filename, status, analysis FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
         doc = cursor.fetchone()
         
         if not doc:
