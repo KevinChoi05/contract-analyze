@@ -3,69 +3,201 @@
 {% block title %}Dashboard - AI Contract Analyzer{% endblock %}
 
 {% block content %}
-<div class="row">
-    <!-- Upload Section -->
-    <div class="col-lg-6 mb-4">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-upload me-2"></i>Upload Contract
-                </h5>
-            </div>
+<!-- Dashboard Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <div class="upload-area" id="uploadArea">
-                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
-                    <h5>Drag & Drop PDF Files</h5>
-                    <p class="text-muted">or click to browse</p>
-                    <p class="text-muted small">
-                        <i class="fas fa-info-circle me-1"></i>
-                        Maximum file size: <strong>50MB</strong>
-                    </p>
-                    <input type="file" id="fileInput" accept=".pdf" style="display: none;">
-                    <button class="btn btn-outline-primary" onclick="document.getElementById('fileInput').click()">
-                        <i class="fas fa-folder-open me-2"></i>Choose File
-                    </button>
-                </div>
-                
-                <div id="uploadProgress" style="display: none;">
-                    <div class="progress mb-3">
-                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-primary bg-gradient rounded-3 p-3">
+                            <i class="fas fa-file-contract text-white fa-2x"></i>
+                        </div>
                     </div>
-                    <p class="text-center mb-0" id="progressText">Uploading...</p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Recent Documents -->
-        <div class="card mt-4">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-history me-2"></i>Recent Documents
-                </h5>
-            </div>
-            <div class="card-body">
-                <div id="documentsList">
-                    <p class="text-muted text-center">No documents uploaded yet</p>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="small text-muted">Total Documents</div>
+                        <div class="h4 mb-0" id="totalDocs">0</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
     
-    <!-- Analysis Section -->
-    <div class="col-lg-6 mb-4">
-        <div class="card">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-chart-line me-2"></i>Analysis Results
-                </h5>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success bg-gradient rounded-3 p-3">
+                            <i class="fas fa-check-circle text-white fa-2x"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="small text-muted">Completed Analysis</div>
+                        <div class="h4 mb-0" id="completedDocs">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-warning bg-gradient rounded-3 p-3">
+                            <i class="fas fa-exclamation-triangle text-white fa-2x"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="small text-muted">Avg Risk Score</div>
+                        <div class="h4 mb-0" id="avgRiskScore">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-danger bg-gradient rounded-3 p-3">
+                            <i class="fas fa-shield-alt text-white fa-2x"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="small text-muted">High Risk Docs</div>
+                        <div class="h4 mb-0" id="highRiskDocs">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Upload Section -->
+    <div class="col-lg-8 mb-4">
+        <!-- Upload Card -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-primary bg-gradient rounded-3 p-2 me-3">
+                        <i class="fas fa-cloud-upload-alt text-white"></i>
+                    </div>
+                    <h5 class="card-title mb-0">Upload New Contract</h5>
+                </div>
+                
+                <div class="upload-area modern" id="uploadArea">
+                    <div class="upload-content">
+                        <div class="upload-icon mb-3">
+                            <i class="fas fa-file-pdf fa-3x text-primary"></i>
+                        </div>
+                        <h6 class="mb-2">Drag & Drop PDF Files</h6>
+                        <p class="text-muted mb-3">or click to browse</p>
+                        <div class="mb-3">
+                            <span class="badge bg-light text-dark">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Maximum file size: 50MB
+                            </span>
+                        </div>
+                        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                        <button class="btn btn-primary btn-lg" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-plus me-2"></i>Choose File
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="uploadProgress" style="display: none;">
+                    <div class="progress mb-3" style="height: 8px;">
+                        <div class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <p class="text-center mb-0 text-muted" id="progressText">Uploading...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Documents List -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 pb-0">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
+                        <div class="bg-secondary bg-gradient rounded-3 p-2 me-3">
+                            <i class="fas fa-history text-white"></i>
+                        </div>
+                        <h5 class="card-title mb-0">Recent Documents</h5>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="input-group input-group-sm" style="width: 250px;">
+                            <span class="input-group-text bg-light border-0">
+                                <i class="fas fa-search text-muted"></i>
+                            </span>
+                            <input type="text" class="form-control border-0 bg-light" placeholder="Search documents..." id="searchInput">
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="card-body">
-                <div id="analysisContent">
-                    <div class="text-center text-muted">
-                        <i class="fas fa-file-alt fa-3x mb-3"></i>
-                        <h5>No Analysis Available</h5>
-                        <p>Upload a contract to see AI-powered risk analysis</p>
+                <div id="documentsList">
+                    <div class="text-center py-5">
+                        <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+                        <h6 class="text-muted">No documents uploaded yet</h6>
+                        <p class="text-muted small">Upload your first contract to get started</p>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions & Info -->
+    <div class="col-lg-4 mb-4">
+        <!-- Quick Actions -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-info bg-gradient rounded-3 p-2 me-3">
+                        <i class="fas fa-bolt text-white"></i>
+                    </div>
+                    <h6 class="card-title mb-0">Quick Actions</h6>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="document.getElementById('fileInput').click()">
+                        <i class="fas fa-upload me-2"></i>Upload Document
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="showRecentActivity()">
+                        <i class="fas fa-clock me-2"></i>View Activity
+                    </button>
+                    <button class="btn btn-outline-info btn-sm" onclick="exportData()">
+                        <i class="fas fa-download me-2"></i>Export Data
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Analysis Overview -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-success bg-gradient rounded-3 p-2 me-3">
+                        <i class="fas fa-chart-line text-white"></i>
+                    </div>
+                    <h6 class="card-title mb-0">Analysis Overview</h6>
+                </div>
+                
+                <div id="analysisOverview">
+                    <div class="text-center py-4">
+                        <i class="fas fa-chart-pie fa-2x text-muted mb-3"></i>
+                        <p class="text-muted small mb-0">Upload contracts to see analysis trends</p>
+                    </div>
+                </div>
+                
+                <!-- Risk Distribution Chart Placeholder -->
+                <div class="mt-3" id="riskChart" style="display: none;">
+                    <canvas id="riskDistributionChart" width="100" height="100"></canvas>
                 </div>
             </div>
         </div>
@@ -160,6 +292,130 @@
         </div>
     </div>
 </div>
+
+{% block extra_css %}
+<style>
+.upload-area.modern {
+    border: 2px dashed #e3e6f0;
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    background: linear-gradient(135deg, #f8f9fc 0%, #f1f3f8 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.upload-area.modern:hover {
+    border-color: #4e73df;
+    background: linear-gradient(135deg, #f0f2ff 0%, #e8ebff 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(78, 115, 223, 0.1);
+}
+
+.upload-area.modern.dragover {
+    border-color: #4e73df;
+    background: linear-gradient(135deg, #e8ebff 0%, #dde2ff 100%);
+    transform: scale(1.02);
+}
+
+.upload-area.modern::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(78, 115, 223, 0.05) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.upload-area.modern:hover::before {
+    opacity: 1;
+}
+
+.upload-content {
+    position: relative;
+    z-index: 2;
+}
+
+.upload-icon {
+    transition: transform 0.3s ease;
+}
+
+.upload-area.modern:hover .upload-icon {
+    transform: scale(1.1);
+}
+
+.card {
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important;
+}
+
+.bg-gradient {
+    background: linear-gradient(135deg, var(--bs-primary) 0%, rgba(var(--bs-primary-rgb), 0.8) 100%) !important;
+}
+
+.bg-success.bg-gradient {
+    background: linear-gradient(135deg, var(--bs-success) 0%, rgba(var(--bs-success-rgb), 0.8) 100%) !important;
+}
+
+.bg-warning.bg-gradient {
+    background: linear-gradient(135deg, var(--bs-warning) 0%, rgba(var(--bs-warning-rgb), 0.8) 100%) !important;
+}
+
+.bg-danger.bg-gradient {
+    background: linear-gradient(135deg, var(--bs-danger) 0%, rgba(var(--bs-danger-rgb), 0.8) 100%) !important;
+}
+
+.bg-info.bg-gradient {
+    background: linear-gradient(135deg, var(--bs-info) 0%, rgba(var(--bs-info-rgb), 0.8) 100%) !important;
+}
+
+.bg-secondary.bg-gradient {
+    background: linear-gradient(135deg, var(--bs-secondary) 0%, rgba(var(--bs-secondary-rgb), 0.8) 100%) !important;
+}
+
+.document-item {
+    border: 1px solid #e3e6f0;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    background: white;
+}
+
+.document-item:hover {
+    border-color: #4e73df;
+    box-shadow: 0 4px 15px rgba(78, 115, 223, 0.1);
+    transform: translateX(5px);
+}
+
+.risk-badge {
+    font-size: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 50px;
+}
+
+.search-highlight {
+    background-color: #fff3cd;
+    padding: 0.1rem 0.2rem;
+    border-radius: 3px;
+}
+
+@media (max-width: 768px) {
+    .upload-area.modern {
+        padding: 2rem 1rem;
+    }
+    
+    .col-xl-3 {
+        margin-bottom: 1rem;
+    }
+}
+</style>
 {% endblock %}
 
 {% block extra_js %}
@@ -244,6 +500,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Load recent documents
     fetchDocuments();
+    
+    // Search functionality
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const documentItems = document.querySelectorAll('.document-item');
+            
+            documentItems.forEach(item => {
+                const filename = item.querySelector('h6').textContent.toLowerCase();
+                if (filename.includes(searchTerm)) {
+                    item.style.display = 'block';
+                    // Highlight search term
+                    if (searchTerm) {
+                        const titleElement = item.querySelector('h6');
+                        const originalText = titleElement.textContent;
+                        const highlightedText = originalText.replace(
+                            new RegExp(searchTerm, 'gi'),
+                            match => `<span class="search-highlight">${match}</span>`
+                        );
+                        titleElement.innerHTML = highlightedText;
+                    }
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+    }
 });
 
 function showFileInfo(file) {
@@ -373,28 +657,52 @@ function fetchDocuments() {
     fetch('/documents')
         .then(response => response.json())
         .then(data => {
+            updateDashboardStats(data);
             const documentsList = document.getElementById('documentsList');
             
             if (data.length === 0) {
-                documentsList.innerHTML = '<p class="text-muted text-center">No documents uploaded yet</p>';
+                documentsList.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+                        <h6 class="text-muted">No documents uploaded yet</h6>
+                        <p class="text-muted small">Upload your first contract to get started</p>
+                    </div>
+                `;
                 return;
             }
             
             documentsList.innerHTML = data.map(doc => `
-                <div id="doc-${doc.id}" class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
-                    <div class="flex-grow-1">
-                        <a href="/document/${doc.id}" class="text-decoration-none text-dark">
-                            <i class="fas fa-file-pdf text-danger me-2"></i>
-                            <span class="fw-bold">${doc.filename}</span>
-                            <br>
-                            <small class="text-muted">${new Date(doc.created_at).toLocaleDateString()}</small>
-                        </a>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="badge bg-${getStatusColor(doc.status)}">${doc.status}</span>
-                        <button class="btn btn-outline-danger btn-sm" onclick="deleteDocument(${doc.id})" title="Delete document">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                <div id="doc-${doc.id}" class="document-item p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <a href="/document/${doc.id}" class="text-decoration-none text-dark">
+                                <div class="d-flex align-items-center mb-2">
+                                    <div class="bg-danger bg-gradient rounded-2 p-2 me-3">
+                                        <i class="fas fa-file-pdf text-white"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-1 fw-bold">${doc.filename}</h6>
+                                        <small class="text-muted">
+                                            <i class="fas fa-calendar-alt me-1"></i>
+                                            ${new Date(doc.created_at).toLocaleDateString()}
+                                        </small>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-${getStatusColor(doc.status)} risk-badge">${getStatusText(doc.status)}</span>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    <i class="fas fa-ellipsis-v"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="/document/${doc.id}"><i class="fas fa-eye me-2"></i>View</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item text-danger" href="#" onclick="deleteDocument(${doc.id})"><i class="fas fa-trash me-2"></i>Delete</a></li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `).join('');
@@ -402,6 +710,28 @@ function fetchDocuments() {
         .catch(error => {
             console.error('Error loading documents:', error);
         });
+}
+
+function updateDashboardStats(documents) {
+    const totalDocs = documents.length;
+    const completedDocs = documents.filter(doc => doc.status === 'completed').length;
+    const highRiskDocs = documents.filter(doc => doc.status === 'completed').length; // Placeholder
+    
+    document.getElementById('totalDocs').textContent = totalDocs;
+    document.getElementById('completedDocs').textContent = completedDocs;
+    document.getElementById('highRiskDocs').textContent = highRiskDocs;
+    document.getElementById('avgRiskScore').textContent = totalDocs > 0 ? '65' : '--'; // Placeholder
+}
+
+function getStatusText(status) {
+    const statusMap = {
+        'completed': 'Completed',
+        'processing': 'Processing',
+        'extracting_text': 'Extracting',
+        'analyzing': 'Analyzing',
+        'error': 'Error'
+    };
+    return statusMap[status] || status;
 }
 
 function getStatusColor(status) {
@@ -437,8 +767,16 @@ function deleteDocument(docId) {
             }
             const documentsList = document.getElementById('documentsList');
             if (documentsList.children.length === 0) {
-                documentsList.innerHTML = '<p class="text-muted text-center">No documents uploaded yet</p>';
+                documentsList.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+                        <h6 class="text-muted">No documents uploaded yet</h6>
+                        <p class="text-muted small">Upload your first contract to get started</p>
+                    </div>
+                `;
             }
+            // Refresh stats
+            fetchDocuments();
         } else {
             alert(`Error: ${data.error || 'Could not delete document.'}`);
         }
@@ -447,6 +785,15 @@ function deleteDocument(docId) {
         console.error('Error:', error);
         alert('An error occurred while trying to delete the document.');
     });
+}
+
+// Quick Action Functions
+function showRecentActivity() {
+    alert('Recent Activity feature coming soon!');
+}
+
+function exportData() {
+    alert('Export Data feature coming soon!');
 }
 </script>
 {% endblock %} 
