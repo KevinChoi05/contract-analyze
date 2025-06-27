@@ -175,8 +175,12 @@ def init_database():
         if conn:
             conn.close()
 
-# Initialize database
-init_database()
+# Defer database initialization until the first request
+@app.before_request
+def before_request_func():
+    init_database()
+    # Remove this hook so it only runs once
+    app.before_request_funcs[None].remove(before_request_func)
 
 class ContractAnalyzer:
     def __init__(self):
