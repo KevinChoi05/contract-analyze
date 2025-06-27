@@ -11,6 +11,7 @@ python-multipart==0.0.6
 redis==5.0.1
 psycopg2-binary==2.9.7
 httpx==0.27.0
-pdf2image
-opencv-python-headless
-numpy 
+pdf2image==1.16.3
+opencv-python-headless==4.8.1.78
+numpy==1.24.3
+easyocr==1.7.0 
