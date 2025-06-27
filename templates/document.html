@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contract Analysis - {{ doc['filename'] }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .header { background-color: #ffffff; padding: 1rem; border-bottom: 1px solid #dee2e6; }
+        .card-header { font-weight: bold; }
+        .risk-card { border-left-width: 5px; }
+        .risk-high { border-left-color: #dc3545; }
+        .risk-medium { border-left-color: #ffc107; }
+        .risk-low { border-left-color: #198754; }
+        .quote {
+            background-color: #e9ecef;
+            padding: 1rem;
+            border-radius: 0.25rem;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">AI Contract Analyzer</h4>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary">Logout</a>
+    </div>
+
+    <div class="container mt-4">
+        <a href="{{ url_for('index') }}"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        <h2 class="mt-3">{{ doc['filename'] }}</h2>
+        <hr>
+    </div>
+
+    <div id="loading" class="container mt-5">
+        <h4 id="loading-status-text" class="text-center">Queueing for processing...</h4>
+        <div class="progress mt-3" style="height: 25px;">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 5%;" aria-valuenow="5" aria-valuemin="0" aria-valuemax="100">5%</div>
+        </div>
+        <p class="mt-3 text-muted text-center">Your document is being processed. This may take a few moments...</p>
+    </div>
+
+    <div id="analysis-results" class="container mt-4" style="display: none;">
+        <!-- Analysis results will be populated here -->
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const docId = {{ doc['id'] }};
+            const loadingDiv = document.getElementById('loading');
+            const resultsDiv = document.getElementById('analysis-results');
+            const progressBar = document.getElementById('progress-bar');
+            const loadingStatusText = document.getElementById('loading-status-text');
+
+            const statusMap = {
+                'processing': { percent: 5, text: 'Queueing for processing...' },
+                'extracting_text': { percent: 20, text: 'Extracting text from PDF...' },
+                'analyzing_openai': { percent: 50, text: 'Analyzing with Primary AI...' },
+                'analyzing_deepseek': { percent: 80, text: 'Cross-referencing with Secondary AI...' },
+                'combining_results': { percent: 95, text: 'Compiling final report...' },
+                'completed': { percent: 100, text: 'Analysis Complete!' }
+            };
+
+            function checkStatus() {
+                fetch(`/status/${docId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const currentStatus = statusMap[data.status];
+                        if (currentStatus) {
+                            progressBar.style.width = `${currentStatus.percent}%`;
+                            progressBar.textContent = `${currentStatus.percent}%`;
+                            progressBar.setAttribute('aria-valuenow', currentStatus.percent);
+                            loadingStatusText.textContent = currentStatus.text;
+                        }
+
+                        if (data.status === 'completed' && data.analysis) {
+                            setTimeout(() => {
+                                loadingDiv.style.display = 'none';
+                                resultsDiv.style.display = 'block';
+                                renderAnalysis(data.analysis.openai); // We'll focus on the primary AI's output
+                            }, 500);
+                        } else if (data.status === 'error') {
+                            loadingDiv.innerHTML = '<p class="text-danger text-center">An error occurred during analysis. Please try another document.</p>';
+                        } else {
+                            setTimeout(checkStatus, 2500);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching status:', error);
+                        loadingDiv.innerHTML = '<p class="text-danger text-center">Could not retrieve analysis status.</p>';
+                    });
+            }
+
+            function getRiskColor(severity) {
+                if (severity > 75) return 'high';
+                if (severity > 40) return 'medium';
+                return 'low';
+            }
+
+            function renderAnalysis(analysis) {
+                if (!analysis) {
+                    resultsDiv.innerHTML = '<p class="text-danger">Analysis data is missing or invalid.</p>';
+                    return;
+                }
+                
+                let resultsHTML = `
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="card text-center mb-4">
+                                <div class="card-header">Overall Risk Score</div>
+                                <div class="card-body">
+                                    <h1 class="display-4">${analysis.overall_risk_score}</h1>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                             <div class="card mb-4">
+                                <div class="card-header">Executive Summary</div>
+                                <div class="card-body">
+                                    <p>${analysis.executive_summary}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <h3>Identified Risk Clauses</h3>
+                `;
+
+                if (analysis.identified_risks && analysis.identified_risks.length > 0) {
+                    analysis.identified_risks.forEach(risk => {
+                        const riskColor = getRiskColor(risk.risk_severity);
+                        resultsHTML += `
+                            <div class="card risk-card risk-${riskColor} mb-3">
+                                <div class="card-header d-flex justify-content-between">
+                                    <span><i class="fas fa-exclamation-triangle"></i> ${risk.clause_type}</span>
+                                    <span class="badge bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'}">${risk.risk_severity} / 100</span>
+                                </div>
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">Risk Explanation</h6>
+                                    <p>${risk.risk_explanation}</p>
+                                    <h6 class="card-subtitle mb-2 text-muted">Recommendation</h6>
+                                    <p>${risk.mitigation_recommendation}</p>
+                                    <h6 class="card-subtitle mb-2 text-muted">Relevant Text</h6>
+                                    <div class="quote">
+                                        ${risk.clause_quote}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    resultsHTML += '<p>No significant risks were identified in this document.</p>';
+                }
+                resultsDiv.innerHTML = resultsHTML;
+            }
+            checkStatus();
+        });
+    </script>
+</body>
+</html> 

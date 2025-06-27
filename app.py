@@ -249,33 +249,30 @@ class ContractAnalyzer:
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": """You are an expert contract analyst. Analyze the following contract and identify:
-1. Key risks and their severity (0-100 scale)
-2. Financial implications
-3. Legal obligations
-4. Business impact
-5. Recommendations for mitigation
+                    {"role": "system", "content": """You are a world-class expert contract analyst AI. Your task is to conduct a comprehensive risk analysis of the provided legal document.
 
-Provide your analysis in JSON format with the following structure:
+Analyze the following contract and identify:
+1.  **Key Risk Clauses:** Identify clauses that pose a financial, legal, operational, or compliance risk.
+2.  **Be Selective:** Based on the document's length and complexity, decide how many risk clauses are truly significant. Focus only on the most critical issues that require attention. Do not list minor or standard clauses.
+3.  **Provide Analysis in JSON format:**
+
+Your output must be a valid JSON object with the following structure:
 {
-    "overall_risk_score": 0-100,
-    "risks": [
+    "overall_risk_score": "A score from 0 (no risk) to 100 (extreme risk), representing your overall assessment of the document.",
+    "executive_summary": "A brief, high-level summary of the contract's purpose and most critical risks. This should be easy for a non-lawyer to understand.",
+    "identified_risks": [
         {
-            "type": "financial|legal|operational|compliance",
-            "description": "Risk description",
-            "severity": 0-100,
-            "impact": "High|Medium|Low",
-            "recommendation": "Mitigation strategy"
+            "clause_type": "Financial | Legal | Operational | Compliance | etc.",
+            "risk_severity": "A score from 0 to 100 for this specific clause.",
+            "clause_quote": "The exact, verbatim text from the contract that constitutes the risk. This is critical for highlighting.",
+            "risk_explanation": "In simple terms, explain what this clause means and why it's a risk. Describe the potential negative impact or 'damage' it could cause.",
+            "mitigation_recommendation": "Suggest a concrete action or negotiation point to reduce this specific risk."
         }
-    ],
-    "financial_impact": "Estimated cost or financial exposure",
-    "legal_obligations": ["List of key legal requirements"],
-    "business_impact": "Operational impact assessment",
-    "summary": "Executive summary"
+    ]
 }"""},
-                    {"role": "user", "content": f"Analyze this contract:\n\n{text[:8000]}"}
+                    {"role": "user", "content": f"Please analyze this contract:\n\n{text[:12000]}"}
                 ],
-                max_tokens=2000
+                max_tokens=4000
             )
             
             return json.loads(response.choices[0].message.content)
@@ -323,37 +320,23 @@ Provide your analysis in JSON format with the following structure:
         """Return mock analysis for demo mode"""
         return {
             "overall_risk_score": 65,
-            "risks": [
+            "executive_summary": "This is a mock analysis. The contract contains several high-risk clauses requiring immediate attention, particularly regarding liability and termination.",
+            "identified_risks": [
                 {
-                    "type": "financial",
-                    "description": "Unlimited liability clause exposes company to significant financial risk",
-                    "severity": 80,
-                    "impact": "High",
-                    "recommendation": "Negotiate liability cap or insurance coverage"
+                    "clause_type": "Financial",
+                    "risk_severity": 85,
+                    "clause_quote": "The party of the first part shall hold unlimited liability for any and all damages arising from the execution of this agreement.",
+                    "risk_explanation": "This clause exposes the company to unlimited financial risk. In a worst-case scenario, this could lead to bankruptcy as there is no cap on the amount of damages that can be claimed.",
+                    "mitigation_recommendation": "Negotiate a liability cap, ideally equal to the contract value or covered by your insurance policy."
                 },
                 {
-                    "type": "legal",
-                    "description": "Indemnification clause requires company to defend third parties",
-                    "severity": 70,
-                    "impact": "High",
-                    "recommendation": "Limit indemnification scope and duration"
-                },
-                {
-                    "type": "operational",
-                    "description": "Short notice period for contract termination",
-                    "severity": 50,
-                    "impact": "Medium",
-                    "recommendation": "Extend notice period to 30-60 days"
+                    "clause_type": "Legal",
+                    "risk_severity": 70,
+                    "clause_quote": "This agreement shall be governed by the laws of the state of utopia, without regard to its conflict of law provisions.",
+                    "risk_explanation": "The governing law is set to a potentially unfavorable or unfamiliar jurisdiction, which could create legal challenges and increase litigation costs if a dispute arises.",
+                    "mitigation_recommendation": "Amend the governing law to a more favorable and familiar jurisdiction, such as the state where your company is headquartered."
                 }
-            ],
-            "financial_impact": "Potential exposure of $500,000 - $2,000,000",
-            "legal_obligations": [
-                "Maintain insurance coverage",
-                "Provide quarterly reports",
-                "Comply with data protection regulations"
-            ],
-            "business_impact": "Requires additional legal review and potential operational changes",
-            "summary": "Contract contains several high-risk clauses requiring immediate attention"
+            ]
         }
 
 analyzer = ContractAnalyzer()
@@ -451,6 +434,29 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+@app.route('/document/<int:doc_id>')
+def document_page(doc_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT id, filename FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+        doc = cursor.fetchone()
+        
+        if not doc:
+            abort(404)
+            
+        return render_template('document.html', doc=doc)
+    except Exception as e:
+        logger.error(f"Error fetching document page for doc_id {doc_id}: {e}")
+        abort(500)
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'user_id' not in session:
@@ -487,7 +493,8 @@ def upload_file():
             logger.info(f"Document uploaded: {filename} (ID: {doc_id}) by user {session['username']}")
             return jsonify({
                 'doc_id': doc_id,
-                'message': 'File uploaded successfully. Analysis in progress.'
+                'message': 'File uploaded successfully. Analysis in progress.',
+                'redirect_url': url_for('document_page', doc_id=doc_id)
             })
 
         except Exception as e:
@@ -500,7 +507,7 @@ def upload_file():
     return jsonify({'error': 'Invalid file type. Please upload a PDF.'}), 400
 
 def analyze_document(doc_id):
-    """Background function to analyze document"""
+    """Background function to analyze document with progress updates."""
     conn = None
     try:
         # Get document from database
@@ -512,20 +519,27 @@ def analyze_document(doc_id):
             logger.error(f"Analysis failed: Document with ID {doc_id} not found.")
             return
 
-        # Update progress
-        cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('analyzing', doc_id))
-        conn.commit()
-        
-        # Extract text
+        def update_status(status):
+            """Helper to update status in the DB."""
+            with get_db_connection() as status_conn:
+                with status_conn.cursor() as status_cursor:
+                    status_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", (status, doc_id))
+                    status_conn.commit()
+
+        # Start text extraction
+        update_status('extracting_text')
         text = analyzer.extract_text_from_pdf(doc['filepath'])
         
-        # Analyze with OpenAI
+        # Start OpenAI analysis
+        update_status('analyzing_openai')
         openai_analysis = analyzer.analyze_contract_with_openai(text)
         
-        # Analyze with DeepSeek
+        # Start DeepSeek analysis
+        update_status('analyzing_deepseek')
         deepseek_analysis = analyzer.analyze_contract_with_deepseek(text)
         
         # Combine analyses
+        update_status('combining_results')
         combined_analysis = {
             'openai': openai_analysis,
             'deepseek': deepseek_analysis,
@@ -534,27 +548,28 @@ def analyze_document(doc_id):
         }
         
         # Store results
-        cursor.execute(
-            "UPDATE documents SET status = %s, analysis = %s WHERE id = %s",
-            ('completed', json.dumps(combined_analysis), doc_id)
-        )
-        conn.commit()
+        with get_db_connection() as final_conn:
+            with final_conn.cursor() as final_cursor:
+                final_cursor.execute(
+                    "UPDATE documents SET status = %s, analysis = %s WHERE id = %s",
+                    ('completed', json.dumps(combined_analysis), doc_id)
+                )
+                final_conn.commit()
         
         logger.info(f"Document analysis completed: {doc['filename']} (ID: {doc_id})")
         
     except Exception as e:
         logger.error(f"Document analysis failed for doc_id {doc_id}: {e}")
-        if conn:
-            try:
-                # Use a new cursor for error updating if the previous one failed
-                error_cursor = conn.cursor()
-                error_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('error', doc_id))
-                conn.commit()
-            except Exception as final_e:
-                logger.error(f"Failed to even update status to error for doc_id {doc_id}: {final_e}")
+        try:
+            with get_db_connection() as error_conn:
+                with error_conn.cursor() as error_cursor:
+                    error_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", ('error', doc_id))
+                    error_conn.commit()
+        except Exception as final_e:
+            logger.error(f"Failed to even update status to error for doc_id {doc_id}: {final_e}")
     finally:
-        if conn:
-            conn.close()
+        # The main connection is no longer needed as we use with-statements
+        pass
 
 @app.route('/status/<doc_id>')
 def get_status(doc_id):
