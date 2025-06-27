@@ -79,7 +79,6 @@ Session(app)
 # Configure API keys
 openai.api_key = os.getenv('OPENAI_API_KEY')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
-OFFLINE_MODE = os.getenv('OFFLINE_MODE', 'False').lower() == 'true'
 
 # Redis configuration
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
@@ -241,9 +240,15 @@ class ContractAnalyzer:
             return ""
     
     def analyze_contract_with_openai(self, text):
-        """Analyze contract using OpenAI GPT-4.1 Mini"""
-        if not self.openai_client or OFFLINE_MODE:
-            return self.get_mock_analysis()
+        """Analyze contract using OpenAI GPT-4o Mini. Returns analysis or error dict."""
+        if not self.openai_client:
+            msg = "OpenAI API client not configured. An API key is required."
+            logger.error(msg)
+            return {
+                "error": True,
+                "executive_summary": msg,
+                "identified_risks": []
+            }
             
         try:
             response = self.openai_client.chat.completions.create(
@@ -278,13 +283,18 @@ Your output must be a valid JSON object with the following structure:
             return json.loads(response.choices[0].message.content)
             
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
-            return self.get_mock_analysis()
+            msg = f"OpenAI API error: {e}"
+            logger.error(msg)
+            return {
+                "error": True,
+                "executive_summary": msg,
+                "identified_risks": []
+            }
     
     def analyze_contract_with_deepseek(self, text):
-        """Analyze contract using DeepSeek v3"""
-        if OFFLINE_MODE or not DEEPSEEK_API_KEY:
-            return self.get_mock_analysis()
+        """Analyze contract using DeepSeek. Returns analysis or error dict."""
+        if not DEEPSEEK_API_KEY:
+            return {"error": True, "detail": "DeepSeek API Key not configured."}
             
         try:
             headers = {
@@ -310,34 +320,11 @@ Your output must be a valid JSON object with the following structure:
             if response.status_code == 200:
                 return json.loads(response.json()['choices'][0]['message']['content'])
             else:
-                return self.get_mock_analysis()
+                return {"error": True, "detail": f"DeepSeek API returned status {response.status_code}"}
                 
         except Exception as e:
             logger.error(f"DeepSeek API error: {e}")
-            return self.get_mock_analysis()
-    
-    def get_mock_analysis(self):
-        """Return mock analysis for demo mode"""
-        return {
-            "overall_risk_score": 65,
-            "executive_summary": "This is a mock analysis. The contract contains several high-risk clauses requiring immediate attention, particularly regarding liability and termination.",
-            "identified_risks": [
-                {
-                    "clause_type": "Financial",
-                    "risk_severity": 85,
-                    "clause_quote": "The party of the first part shall hold unlimited liability for any and all damages arising from the execution of this agreement.",
-                    "risk_explanation": "This clause exposes the company to unlimited financial risk. In a worst-case scenario, this could lead to bankruptcy as there is no cap on the amount of damages that can be claimed.",
-                    "mitigation_recommendation": "Negotiate a liability cap, ideally equal to the contract value or covered by your insurance policy."
-                },
-                {
-                    "clause_type": "Legal",
-                    "risk_severity": 70,
-                    "clause_quote": "This agreement shall be governed by the laws of the state of utopia, without regard to its conflict of law provisions.",
-                    "risk_explanation": "The governing law is set to a potentially unfavorable or unfamiliar jurisdiction, which could create legal challenges and increase litigation costs if a dispute arises.",
-                    "mitigation_recommendation": "Amend the governing law to a more favorable and familiar jurisdiction, such as the state where your company is headquartered."
-                }
-            ]
-        }
+            return {"error": True, "detail": f"DeepSeek API error: {e}"}
 
 analyzer = ContractAnalyzer()
 
