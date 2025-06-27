@@ -654,5 +654,4 @@ if __name__ == '__main__':
         print(f"Listening on: http://0.0.0.0:{port}")
         print("For production, run with a WSGI server like Gunicorn.")
         print("---------------------------------")
-        app.run(debug=True, host='0.0.0.0', port=port)#   F o r c i n g   a   f i l e   c h a n g e  
- 
+        app.run(debug=True, host='0.0.0.0', port=port)
