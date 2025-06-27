@@ -138,42 +138,51 @@ def get_db_connection():
         raise e
 
 def init_database():
-    """Initialize database tables for PostgreSQL."""
+    """Initialize database tables for PostgreSQL with retry logic."""
     conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # User table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Document table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS documents (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                filename VARCHAR(255) NOT NULL,
-                filepath VARCHAR(500) NOT NULL,
-                status VARCHAR(20) DEFAULT 'processing',
-                analysis JSONB,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        conn.commit()
-        logger.info("Database initialized successfully for PostgreSQL")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-    finally:
-        if conn:
-            conn.close()
+    retries = 5
+    delay = 5  # seconds
+    for i in range(retries):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # User table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Document table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS documents (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    filename VARCHAR(255) NOT NULL,
+                    filepath VARCHAR(500) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'processing',
+                    analysis JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            conn.commit()
+            logger.info("Database initialized successfully for PostgreSQL")
+            return  # Exit the function on success
+        except Exception as e:
+            logger.warning(f"Database connection attempt {i+1}/{retries} failed: {e}")
+            if i < retries - 1:
+                time.sleep(delay)
+            else:
+                logger.critical("Could not connect to the database after several retries. Exiting.")
+                raise  # Re-raise the exception after the last attempt
+        finally:
+            if conn:
+                conn.close()
 
 # Initialize database on startup
 init_database()
