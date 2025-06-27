@@ -28,5 +28,5 @@ RUN mkdir -p logs uploads flask_session
 # Expose port
 EXPOSE 5001
 
-# Set the command to run the application using the PORT environment variable
-CMD /bin/sh -c "gunicorn --bind 0.0.0.0:${PORT:-5001} app:app" 
+# Set the command to run the application using the PORT environment variable with verbose logging for debugging
+CMD gunicorn --bind 0.0.0.0:${PORT:-5001} --workers 1 --log-level debug --log-file - app:app 
