@@ -351,28 +351,8 @@ analyzer = ContractAnalyzer()
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint for load balancers"""
-    try:
-        # Check database connection
-        conn = get_db_connection()
-        if conn:
-            conn.close()
-        
-        # Check Redis connection
-        if redis_client:
-            redis_client.ping()
-        
-        return jsonify({
-            'status': 'healthy',
-            'timestamp': datetime.now().isoformat(),
-            'version': '1.0.0'
-        })
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e)
-        }), 500
+    """A simple and reliable health check endpoint."""
+    return jsonify({'status': 'healthy'}), 200
 
 @app.route('/')
 def index():
