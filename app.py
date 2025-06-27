@@ -457,6 +457,46 @@ def document_page(doc_id):
         if conn:
             conn.close()
 
+@app.route('/document/<int:doc_id>', methods=['DELETE'])
+def delete_document(doc_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # First, find the document to get its filepath
+        cursor.execute("SELECT filepath FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+        doc = cursor.fetchone()
+        
+        if not doc:
+            return jsonify({'error': 'Document not found or you do not have permission'}), 404
+
+        # Delete the record from the database
+        cursor.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
+        conn.commit()
+
+        # Delete the physical file
+        try:
+            if os.path.exists(doc['filepath']):
+                os.remove(doc['filepath'])
+                logger.info(f"Deleted physical file: {doc['filepath']}")
+        except Exception as e:
+            # Log this error, but don't fail the request since the DB record is gone.
+            logger.error(f"Could not delete physical file {doc['filepath']}: {e}")
+            
+        logger.info(f"User {session['username']} deleted document with ID {doc_id}")
+        return jsonify({'message': 'Document deleted successfully'}), 200
+
+    except Exception as e:
+        logger.error(f"Error deleting document {doc_id}: {e}")
+        return jsonify({'error': 'An error occurred while deleting the document.'}), 500
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'user_id' not in session:

@@ -412,7 +412,56 @@ function getStatusColor(status) {
 }
 
 function renderDocuments(docs) {
-    // ... existing code ...
+    const list = document.getElementById('document-list');
+    if (docs.length === 0) {
+        list.innerHTML = '<p class="text-center text-muted">You have not uploaded any documents yet.</p>';
+        return;
+    }
+    list.innerHTML = docs.map(doc => `
+        <div id="doc-${doc.id}" class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="/document/${doc.id}" class="text-decoration-none text-dark flex-grow-1 me-3">
+                <div class="d-flex w-100 justify-content-between">
+                    <div>
+                        <h6 class="mb-1">${doc.filename}</h6>
+                        <small class="text-muted">${new Date(doc.created_at).toLocaleDateString()}</small>
+                    </div>
+                    <span class="badge bg-${getStatusColor(doc.status)} align-self-center">${doc.status}</span>
+                </div>
+            </a>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteDocument(${doc.id})">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+function deleteDocument(docId) {
+    if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
+        return;
+    }
+
+    fetch(`/document/${docId}`, {
+        method: 'DELETE',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            const docElement = document.getElementById(`doc-${docId}`);
+            if (docElement) {
+                docElement.remove();
+            }
+            const list = document.getElementById('document-list');
+            if (list.children.length === 0) {
+                list.innerHTML = '<p class="text-center text-muted">You have not uploaded any documents yet.</p>';
+            }
+        } else {
+            alert(`Error: ${data.error || 'Could not delete document.'}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while trying to delete the document.');
+    });
 }
 </script>
 {% endblock %} 
