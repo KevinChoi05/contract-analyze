@@ -480,22 +480,42 @@ document.addEventListener('DOMContentLoaded', function() {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            uploadProgress.style.display = 'none';
             if (data.error) {
-                uploadProgress.style.display = 'none';
-                uploadProgress.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                // Show detailed error message
+                showErrorAlert(data.error);
+                console.error('Upload error:', data.error);
             } else {
-                uploadProgress.style.display = 'none';
-                uploadProgress.innerHTML = `<span class="text-success">${data.message}</span>`;
-                // Redirect to the new document page
-                window.location.href = data.redirect_url;
+                // Show success message
+                showSuccessAlert(data.message || 'File uploaded successfully!');
+                // Redirect to the new document page after a short delay
+                setTimeout(() => {
+                    window.location.href = data.redirect_url;
+                }, 1500);
             }
         })
         .catch(error => {
-            console.error('Upload error:', error);
             uploadProgress.style.display = 'none';
-            uploadProgress.innerHTML = `<span class="text-danger">Upload failed. Please try again.</span>`;
+            console.error('Upload error:', error);
+            
+            // Provide specific error messages based on error type
+            let errorMessage = 'Upload failed. Please try again.';
+            if (error.message.includes('413')) {
+                errorMessage = 'File is too large. Please upload a smaller file.';
+            } else if (error.message.includes('500')) {
+                errorMessage = 'Server error. Please try again later.';
+            } else if (error.message.includes('Network')) {
+                errorMessage = 'Network error. Please check your connection and try again.';
+            }
+            
+            showErrorAlert(errorMessage);
         });
     }
 
@@ -795,6 +815,47 @@ function showRecentActivity() {
 
 function exportData() {
     alert('Export Data feature coming soon!');
+}
+
+// Alert Functions
+function showSuccessAlert(message) {
+    const alertHtml = `
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="fas fa-check-circle me-2"></i>${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    showAlert(alertHtml);
+}
+
+function showErrorAlert(message) {
+    const alertHtml = `
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    showAlert(alertHtml);
+}
+
+function showAlert(alertHtml) {
+    // Remove existing alerts
+    const existingAlerts = document.querySelectorAll('.alert');
+    existingAlerts.forEach(alert => alert.remove());
+    
+    // Add new alert at the top of the page
+    const container = document.querySelector('.container');
+    const alertDiv = document.createElement('div');
+    alertDiv.innerHTML = alertHtml;
+    container.insertBefore(alertDiv.firstElementChild, container.firstChild);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        const alert = document.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 5000);
 }
 </script>
 {% endblock %} 
