@@ -10,7 +10,7 @@ Python Flask OpenAI DeepSeek
 
 ### 🎯 **Core Functionality**
 
-* **AI-Powered Text Extraction**: GPT-4.1 Mini vision for 95%+ accuracy
+* **Unified Enterprise OCR**: Google Cloud Document AI with 200+ language support
 * **Advanced Risk Analysis**: DeepSeek v3 for comprehensive contract evaluation
 * **Smart Risk Scoring**: 0-100 scale using 5-criteria methodology
 * **Real-time PDF Highlighting**: Visual clause identification in original documents
@@ -18,7 +18,7 @@ Python Flask OpenAI DeepSeek
 
 ### 🔧 **Technical Capabilities**
 
-* **Multi-Engine Text Extraction**: GPT-4.1 Mini → PyMuPDF → EasyOCR → Tesseract fallback
+* **Unified OCR Engine**: Google Cloud Document AI → PyMuPDF fallback (handles any document type)
 * **Background Processing**: Async document analysis with real-time status updates
 * **Enhanced Text Matching**: Advanced algorithms for precise clause highlighting
 * **User Authentication**: Secure session management and document ownership
@@ -54,9 +54,11 @@ brew install poppler
 OPENAI_API_KEY=your_openai_api_key_here  
 DEEPSEEK_API_KEY=your_deepseek_api_key_here  
 OPENAI_VISION_MODEL=gpt-4.1-mini
-5. **Run the application**  
+5. **Configure OCR (Optional)**For enterprise-grade OCR with 200+ languages, see [Google Cloud Setup Guide](GOOGLE_CLOUD_SETUP.md)  
+Without setup, app uses basic PyMuPDF OCR (works for most digital PDFs)
+6. **Run the application**  
 python app.py
-6. **Open your browser**Navigate to `http://localhost:5001`
+7. **Open your browser**Navigate to `http://localhost:5001`
 
 ## 🎯 Usage
 
@@ -71,7 +73,7 @@ python app.py
 ### AI Pipeline
 
 ```
-PDF Upload → GPT-4.1 Mini Vision → Text Extraction → DeepSeek v3 Analysis → Risk Scoring → Highlighting
+PDF Upload → Google Cloud Document AI → Unified Text Extraction → DeepSeek v3 Analysis → Risk Scoring → Highlighting
 ```
 
 ### Risk Scoring Methodology
@@ -86,9 +88,17 @@ PDF Upload → GPT-4.1 Mini Vision → Text Extraction → DeepSeek v3 Analysis 
 
 ### Environment Variables
 
-* `OPENAI_API_KEY`: OpenAI API key for GPT-4.1 Mini
-* `DEEPSEEK_API_KEY`: DeepSeek API key for analysis
-* `OPENAI_VISION_MODEL`: Model selection (gpt-4.1-mini, gpt-4o, gpt-4o-mini)
+**Required:**
+* `DEEPSEEK_API_KEY`: DeepSeek API key for contract analysis
+* `OPENAI_API_KEY`: OpenAI API key (optional, for future features)
+
+**OCR Configuration (Optional):**
+* `GOOGLE_CLOUD_PROJECT_ID`: Your Google Cloud project ID
+* `GOOGLE_CLOUD_LOCATION`: Processor location (us, eu, asia)
+* `DOCUMENT_AI_PROCESSOR_ID`: Document AI processor ID
+* `GOOGLE_APPLICATION_CREDENTIALS_JSON`: Service account JSON (for Railway)
+
+**Other:**
 * `OFFLINE_MODE`: Demo mode without API calls
 
 ### Model Selection
