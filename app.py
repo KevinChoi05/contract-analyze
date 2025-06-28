@@ -201,53 +201,145 @@ def extract_text_with_easyocr(filepath, languages=['en']):
         import cv2
         import numpy as np
         
-        reader = easyocr.Reader(languages, gpu=False)
-        images = fitz.open(filepath)
-        full_text = []
-        for page_num, page in enumerate(images):
-            pix = page.get_pixmap(dpi=300)
-            img_data = pix.tobytes("png")
-            img = Image.open(io.BytesIO(img_data))
-            img_np = np.array(img)
-            
-            # Simple preprocessing
-            img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-            results = reader.readtext(img_gray, detail=0, paragraph=True)
-            full_text.extend(results)
+        # Initialize reader with error handling
+        try:
+            reader = easyocr.Reader(languages, gpu=False, verbose=False)
+        except Exception as e:
+            logger.error(f"Failed to initialize EasyOCR reader: {e}")
+            return ""
         
-        return " ".join(full_text)
+        # Open PDF and process pages
+        try:
+            with fitz.open(filepath) as doc:
+                if doc.page_count == 0:
+                    logger.warning("PDF has no pages for OCR")
+                    return ""
+                
+                full_text = []
+                max_pages = min(10, doc.page_count)  # Limit to first 10 pages to avoid timeouts
+                
+                for page_num in range(max_pages):
+                    try:
+                        page = doc[page_num]
+                        # Increase DPI for better OCR accuracy
+                        pix = page.get_pixmap(dpi=200)  # Reduced from 300 to balance quality/speed
+                        img_data = pix.tobytes("png")
+                        
+                        # Validate image data
+                        if len(img_data) == 0:
+                            logger.warning(f"Empty image data for page {page_num}")
+                            continue
+                            
+                        img = Image.open(io.BytesIO(img_data))
+                        img_np = np.array(img)
+                        
+                        # Handle different image formats
+                        if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                            # RGB image
+                            img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+                        elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                            # RGBA image
+                            img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGBA2GRAY)
+                        elif len(img_np.shape) == 2:
+                            # Already grayscale
+                            img_gray = img_np
+                        else:
+                            logger.warning(f"Unsupported image format on page {page_num}: {img_np.shape}")
+                            continue
+                        
+                        # Enhance image for better OCR
+                        img_gray = cv2.medianBlur(img_gray, 3)
+                        
+                        # Perform OCR
+                        results = reader.readtext(img_gray, detail=0, paragraph=True)
+                        if results:
+                            page_text = " ".join(results)
+                            if page_text.strip():
+                                full_text.append(page_text)
+                                logger.info(f"OCR extracted {len(page_text)} characters from page {page_num}")
+                        
+                    except Exception as page_error:
+                        logger.warning(f"OCR failed for page {page_num}: {page_error}")
+                        continue
+                
+                combined_text = " ".join(full_text)
+                logger.info(f"OCR extraction completed: {len(combined_text)} total characters from {len(full_text)} pages")
+                return combined_text
+                
+        except Exception as doc_error:
+            logger.error(f"Failed to open document for OCR: {doc_error}")
+            return ""
+        
     except ImportError as e:
         logger.error(f"Missing dependency for EasyOCR extraction: {e}")
         return ""
     except Exception as e:
-        logger.error(f"Error in EasyOCR extraction: {e}")
+        logger.error(f"Unexpected error in EasyOCR extraction: {e}")
         return ""
 
 def extract_text_robust(filepath):
     """Enhanced text extraction, prioritizing methods for accuracy."""
     logger.info(f"Starting robust text extraction for: {filepath}")
     text = ""
+    
+    # Validate file exists and is readable
+    if not os.path.exists(filepath):
+        logger.error(f"File does not exist: {filepath}")
+        return None
+    
+    try:
+        file_size = os.path.getsize(filepath)
+        if file_size == 0:
+            logger.error(f"File is empty: {filepath}")
+            return None
+        logger.info(f"Processing file: {filepath} ({file_size} bytes)")
+    except Exception as e:
+        logger.error(f"Cannot access file {filepath}: {e}")
+        return None
+    
     # Method 1: PyMuPDF (Fast, good for digital PDFs)
     try:
         with fitz.open(filepath) as doc:
-            text = "".join(page.get_text() for page in doc)
-        if len(text.strip()) > 100:
-            logger.info("PyMuPDF extraction successful.")
+            if doc.page_count == 0:
+                logger.warning(f"PDF has no pages: {filepath}")
+                return None
+            
+            text_parts = []
+            for page_num in range(doc.page_count):
+                page = doc[page_num]
+                page_text = page.get_text()
+                if page_text.strip():
+                    text_parts.append(page_text)
+            
+            text = " ".join(text_parts)
+            
+        if len(text.strip()) > 50:  # Lowered threshold for better detection
+            logger.info(f"PyMuPDF extraction successful: {len(text)} characters")
             return text
+        else:
+            logger.info(f"PyMuPDF extracted minimal text ({len(text)} chars), trying OCR...")
     except Exception as e:
         logger.error(f"PyMuPDF extraction failed: {e}")
 
     # Method 2: EasyOCR (For scanned documents)
-    logger.info("PyMuPDF found minimal text, trying EasyOCR...")
+    logger.info("Attempting OCR text extraction...")
     try:
-        text = extract_text_with_easyocr(filepath)
-        if len(text.strip()) > 100:
-            logger.info("EasyOCR extraction successful.")
-            return text
+        ocr_text = extract_text_with_easyocr(filepath)
+        if len(ocr_text.strip()) > 50:
+            logger.info(f"EasyOCR extraction successful: {len(ocr_text)} characters")
+            return ocr_text
+        else:
+            logger.warning(f"EasyOCR extracted minimal text: {len(ocr_text)} characters")
     except Exception as e:
-        logger.error(f"EasyOCR extraction failed during robust extraction: {e}")
+        logger.error(f"EasyOCR extraction failed: {e}")
 
-    return text if text else "Error: Could not extract readable text from this document."
+    # Method 3: Fallback - return any text we found, even if minimal
+    if text and len(text.strip()) > 10:
+        logger.warning(f"Using minimal text extraction: {len(text)} characters")
+        return text
+    
+    logger.error(f"All text extraction methods failed for: {filepath}")
+    return None
 
 def analyze_contract(text_content):
     """Analyzes contract text using DeepSeek and returns structured JSON."""
@@ -582,8 +674,11 @@ def analyze_document(doc_id):
         # Start text extraction
         update_status('extracting_text')
         text = extract_text_robust(doc['filepath'])
-        if "Error:" in text:
-             raise Exception(text)
+        if text is None:
+            raise Exception("Could not extract readable text from this document. The file may be corrupted, password-protected, or contain only images without text.")
+        
+        if len(text.strip()) < 50:
+            raise Exception("Extracted text is too short to analyze. This document may contain mostly images or be in an unsupported format.")
         
         # Start analysis
         update_status('analyzing')
@@ -651,22 +746,72 @@ def get_documents():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT id, filename, status, created_at FROM documents WHERE user_id = %s ORDER BY created_at DESC", (session['user_id'],))
+        cursor.execute("SELECT id, filename, status, created_at, analysis FROM documents WHERE user_id = %s ORDER BY created_at DESC", (session['user_id'],))
         docs = cursor.fetchall()
         
-        user_docs = [
-            {
+        user_docs = []
+        for doc in docs:
+            doc_info = {
                 'id': doc['id'],
                 'filename': doc['filename'],
                 'status': doc['status'],
                 'created_at': doc['created_at'].isoformat()
             }
-            for doc in docs
-        ]
+            
+            # Add error message if status is error
+            if doc['status'] == 'error' and doc['analysis']:
+                try:
+                    analysis = json.loads(doc['analysis']) if isinstance(doc['analysis'], str) else doc['analysis']
+                    if 'error' in analysis:
+                        doc_info['error_message'] = analysis['error']
+                except:
+                    doc_info['error_message'] = 'Unknown error occurred'
+            
+            user_docs.append(doc_info)
+            
         return jsonify(user_docs)
     except Exception as e:
         logger.error(f"Database documents error: {e}")
         return jsonify({'error': 'Could not retrieve documents.'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/retry/<int:doc_id>', methods=['POST'])
+def retry_document(doc_id):
+    """Retry processing a failed document."""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Check if document exists and belongs to user
+        cursor.execute("SELECT * FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+        doc = cursor.fetchone()
+        
+        if not doc:
+            return jsonify({'error': 'Document not found'}), 404
+        
+        if doc['status'] not in ['error', 'completed']:
+            return jsonify({'error': 'Document is currently being processed'}), 400
+        
+        # Reset status to processing
+        cursor.execute("UPDATE documents SET status = 'processing', analysis = NULL WHERE id = %s", (doc_id,))
+        conn.commit()
+        
+        # Start analysis in background
+        thread = threading.Thread(target=analyze_document, args=(doc_id,))
+        thread.start()
+        
+        logger.info(f"Retrying document analysis for doc_id {doc_id} by user {session.get('username', 'unknown')}")
+        return jsonify({'message': 'Document processing restarted'}), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrying document {doc_id}: {e}")
+        return jsonify({'error': 'Failed to retry document processing'}), 500
     finally:
         if conn:
             conn.close()
