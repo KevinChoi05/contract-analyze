@@ -195,7 +195,12 @@ def extract_text_with_easyocr(filepath, languages=['en']):
     if not EASYOCR_AVAILABLE:
         logger.warning("EasyOCR text extraction skipped: library not available.")
         return ""
+    
     try:
+        # Test OpenCV import
+        import cv2
+        import numpy as np
+        
         reader = easyocr.Reader(languages, gpu=False)
         images = fitz.open(filepath)
         full_text = []
@@ -211,6 +216,9 @@ def extract_text_with_easyocr(filepath, languages=['en']):
             full_text.extend(results)
         
         return " ".join(full_text)
+    except ImportError as e:
+        logger.error(f"Missing dependency for EasyOCR extraction: {e}")
+        return ""
     except Exception as e:
         logger.error(f"Error in EasyOCR extraction: {e}")
         return ""
@@ -474,14 +482,37 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
+    # Validate file size (50MB limit)
+    if file.content_length and file.content_length > 50 * 1024 * 1024:
+        return jsonify({'error': 'File size exceeds 50MB limit'}), 400
+    
     if file and file.filename.lower().endswith('.pdf'):
         filename = secure_filename(file.filename)
+        # Add timestamp to avoid filename conflicts
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        name, ext = os.path.splitext(filename)
+        filename = f"{name}_{timestamp}{ext}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
         
         conn = None
         doc_id = None
         try:
+            # Save file first
+            file.save(filepath)
+            logger.info(f"File saved to: {filepath}")
+            
+            # Verify file was saved and is readable
+            if not os.path.exists(filepath):
+                raise Exception("File was not saved properly")
+            
+            # Test basic file operations
+            file_size = os.path.getsize(filepath)
+            if file_size == 0:
+                raise Exception("Uploaded file is empty")
+            
+            logger.info(f"File verified: {filename} ({file_size} bytes)")
+            
+            # Save to database
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
@@ -495,7 +526,7 @@ def upload_file():
             thread = threading.Thread(target=analyze_document, args=(doc_id,))
             thread.start()
             
-            logger.info(f"Document uploaded: {filename} (ID: {doc_id}) by user {session['username']}")
+            logger.info(f"Document uploaded successfully: {filename} (ID: {doc_id}) by user {session.get('username', 'unknown')}")
             return jsonify({
                 'doc_id': doc_id,
                 'message': 'File uploaded successfully. Analysis in progress.',
@@ -503,13 +534,29 @@ def upload_file():
             })
 
         except Exception as e:
-            logger.error(f"Database upload error: {e}")
-            return jsonify({'error': 'Failed to record document in database.'}), 500
+            logger.error(f"Upload error for user {session.get('username', 'unknown')}: {e}")
+            
+            # Clean up file if it was saved but database failed
+            if filepath and os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    logger.info(f"Cleaned up file after error: {filepath}")
+                except:
+                    pass
+            
+            # Return user-friendly error message
+            error_msg = "Failed to upload file. Please try again."
+            if "database" in str(e).lower():
+                error_msg = "Database error. Please try again later."
+            elif "file" in str(e).lower():
+                error_msg = "File processing error. Please check your PDF file."
+            
+            return jsonify({'error': error_msg}), 500
         finally:
             if conn:
                 conn.close()
     
-    return jsonify({'error': 'Invalid file type. Please upload a PDF.'}), 400
+    return jsonify({'error': 'Invalid file type. Please upload a PDF file.'}), 400
 
 def analyze_document(doc_id):
     """Background function to analyze document with progress updates."""
