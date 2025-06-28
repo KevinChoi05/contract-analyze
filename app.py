@@ -25,27 +25,8 @@ from psycopg2.extras import RealDictCursor
 import sqlite3
 from werkzeug.serving import run_simple
 import platform
-import numpy as np
-import cv2
-
-# Optional imports with graceful fallbacks
-try:
-    import easyocr
-    EASYOCR_AVAILABLE = True
-    print("✅ EasyOCR is available")
-except ImportError:
-    EASYOCR_AVAILABLE = False
-    easyocr = None
-    print("❌ EasyOCR is not installed - OCR functionality will be limited")
-
-try:
-    import pytesseract
-    TESSERACT_AVAILABLE = True
-    print("✅ Tesseract is available")
-except ImportError:
-    TESSERACT_AVAILABLE = False
-    pytesseract = None
-    print("❌ Tesseract is not installed - OCR functionality will be limited")
+# Import unified OCR module
+from cloud_ocr import extract_text_unified, get_ocr_service
 
 # Load environment variables
 if os.getenv('FLASK_ENV') != 'production':
@@ -106,17 +87,9 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('logs', exist_ok=True)
 os.makedirs('flask_session', exist_ok=True)
 
-# Initialize OCR reader
-if EASYOCR_AVAILABLE:
-    try:
-        reader = easyocr.Reader(['en'])
-        logger.info("EasyOCR initialized successfully")
-    except Exception as e:
-        reader = None
-        logger.warning(f"EasyOCR not available: {e}")
-else:
-    reader = None
-    logger.warning("EasyOCR not installed")
+# Initialize OCR service
+ocr_service = get_ocr_service()
+logger.info("OCR service initialized")
 
 # In-memory storage (fallback) - REMOVED FOR PRODUCTION
 # users = {}
@@ -190,156 +163,27 @@ init_database()
 
 # --- Advanced Document Processing Engine ---
 
-def extract_text_with_easyocr(filepath, languages=['en']):
-    """Extract text from a PDF or image using EasyOCR with enhanced preprocessing."""
-    if not EASYOCR_AVAILABLE:
-        logger.warning("EasyOCR text extraction skipped: library not available.")
-        return ""
-    
-    try:
-        # Test OpenCV import
-        import cv2
-        import numpy as np
-        
-        # Initialize reader with error handling
-        try:
-            reader = easyocr.Reader(languages, gpu=False, verbose=False)
-        except Exception as e:
-            logger.error(f"Failed to initialize EasyOCR reader: {e}")
-            return ""
-        
-        # Open PDF and process pages
-        try:
-            with fitz.open(filepath) as doc:
-                if doc.page_count == 0:
-                    logger.warning("PDF has no pages for OCR")
-                    return ""
-                
-                full_text = []
-                max_pages = min(10, doc.page_count)  # Limit to first 10 pages to avoid timeouts
-                
-                for page_num in range(max_pages):
-                    try:
-                        page = doc[page_num]
-                        # Increase DPI for better OCR accuracy
-                        pix = page.get_pixmap(dpi=200)  # Reduced from 300 to balance quality/speed
-                        img_data = pix.tobytes("png")
-                        
-                        # Validate image data
-                        if len(img_data) == 0:
-                            logger.warning(f"Empty image data for page {page_num}")
-                            continue
-                            
-                        img = Image.open(io.BytesIO(img_data))
-                        img_np = np.array(img)
-                        
-                        # Handle different image formats
-                        if len(img_np.shape) == 3 and img_np.shape[2] == 3:
-                            # RGB image
-                            img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-                        elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
-                            # RGBA image
-                            img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGBA2GRAY)
-                        elif len(img_np.shape) == 2:
-                            # Already grayscale
-                            img_gray = img_np
-                        else:
-                            logger.warning(f"Unsupported image format on page {page_num}: {img_np.shape}")
-                            continue
-                        
-                        # Enhance image for better OCR
-                        img_gray = cv2.medianBlur(img_gray, 3)
-                        
-                        # Perform OCR
-                        results = reader.readtext(img_gray, detail=0, paragraph=True)
-                        if results:
-                            page_text = " ".join(results)
-                            if page_text.strip():
-                                full_text.append(page_text)
-                                logger.info(f"OCR extracted {len(page_text)} characters from page {page_num}")
-                        
-                    except Exception as page_error:
-                        logger.warning(f"OCR failed for page {page_num}: {page_error}")
-                        continue
-                
-                combined_text = " ".join(full_text)
-                logger.info(f"OCR extraction completed: {len(combined_text)} total characters from {len(full_text)} pages")
-                return combined_text
-                
-        except Exception as doc_error:
-            logger.error(f"Failed to open document for OCR: {doc_error}")
-            return ""
-        
-    except ImportError as e:
-        logger.error(f"Missing dependency for EasyOCR extraction: {e}")
-        return ""
-    except Exception as e:
-        logger.error(f"Unexpected error in EasyOCR extraction: {e}")
-        return ""
-
 def extract_text_robust(filepath):
-    """Enhanced text extraction, prioritizing methods for accuracy."""
-    logger.info(f"Starting robust text extraction for: {filepath}")
-    text = ""
-    
-    # Validate file exists and is readable
-    if not os.path.exists(filepath):
-        logger.error(f"File does not exist: {filepath}")
-        return None
+    """
+    Unified text extraction using Google Cloud Document AI or fallback
+    This replaces all the complex OCR logic with a single, reliable method
+    """
+    logger.info(f"Starting unified text extraction for: {filepath}")
     
     try:
-        file_size = os.path.getsize(filepath)
-        if file_size == 0:
-            logger.error(f"File is empty: {filepath}")
-            return None
-        logger.info(f"Processing file: {filepath} ({file_size} bytes)")
-    except Exception as e:
-        logger.error(f"Cannot access file {filepath}: {e}")
-        return None
-    
-    # Method 1: PyMuPDF (Fast, good for digital PDFs)
-    try:
-        with fitz.open(filepath) as doc:
-            if doc.page_count == 0:
-                logger.warning(f"PDF has no pages: {filepath}")
-                return None
-            
-            text_parts = []
-            for page_num in range(doc.page_count):
-                page = doc[page_num]
-                page_text = page.get_text()
-                if page_text.strip():
-                    text_parts.append(page_text)
-            
-            text = " ".join(text_parts)
-            
-        if len(text.strip()) > 50:  # Lowered threshold for better detection
-            logger.info(f"PyMuPDF extraction successful: {len(text)} characters")
+        # Use unified OCR service
+        text = extract_text_unified(filepath)
+        
+        if text and len(text.strip()) > 10:
+            logger.info(f"✅ Unified OCR extraction successful: {len(text)} characters")
             return text
         else:
-            logger.info(f"PyMuPDF extracted minimal text ({len(text)} chars), trying OCR...")
+            logger.warning("Unified OCR extracted minimal or no text")
+            return None
+            
     except Exception as e:
-        logger.error(f"PyMuPDF extraction failed: {e}")
-
-    # Method 2: EasyOCR (For scanned documents)
-    logger.info("Attempting OCR text extraction...")
-    try:
-        ocr_text = extract_text_with_easyocr(filepath)
-        if len(ocr_text.strip()) > 50:
-            logger.info(f"EasyOCR extraction successful: {len(ocr_text)} characters")
-            return ocr_text
-        else:
-            logger.warning(f"EasyOCR extracted minimal text: {len(ocr_text)} characters")
-    except Exception as e:
-        logger.error(f"EasyOCR extraction failed: {e}")
-
-    # Method 3: Fallback - return any text we found, even if minimal
-    if text and len(text.strip()) > 10:
-        logger.warning(f"Using minimal text extraction: {len(text)} characters")
-        return text
-    
-    logger.error(f"All text extraction methods failed for: {filepath}")
-    return None
+        logger.error(f"Unified OCR extraction failed: {e}")
+        return None
 
 def analyze_contract(text_content):
     """Analyzes contract text using DeepSeek and returns structured JSON."""
