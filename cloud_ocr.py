@@ -6,62 +6,58 @@ import os
 import logging
 from typing import Optional
 from google.cloud import documentai
-from google.cloud import storage
-import tempfile
 
 logger = logging.getLogger(__name__)
 
 class UnifiedOCR:
-    """Unified OCR service using Google Cloud Document AI"""
+    """Unified OCR service using Google Cloud Document AI. This is a hard requirement."""
     
     def __init__(self):
-        """Initialize the Document AI client"""
+        """Initialize the Document AI client. Raises exceptions if misconfigured."""
         self.project_id = os.getenv('GOOGLE_CLOUD_PROJECT_ID')
         self.location = os.getenv('GOOGLE_CLOUD_LOCATION', 'us')  # us, eu, asia
         self.processor_id = os.getenv('DOCUMENT_AI_PROCESSOR_ID')
         
         # Check if all required config is present
         if not all([self.project_id, self.processor_id]):
-            logger.info("🔧 Google Cloud Document AI not configured - using fallback OCR")
-            self.client = None
-            self.available = False
-            return
+            raise EnvironmentError(
+                "Google Cloud Document AI not configured. "
+                "Ensure GOOGLE_CLOUD_PROJECT_ID and DOCUMENT_AI_PROCESSOR_ID env vars are set."
+            )
         
         # Handle Railway environment variable for service account JSON
         credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+        initialized = False
         if credentials_json:
             try:
                 import json
-                import tempfile
                 from google.oauth2 import service_account
                 
-                # Parse JSON credentials
                 creds_dict = json.loads(credentials_json)
-                
-                # Create credentials from dict
                 credentials = service_account.Credentials.from_service_account_info(creds_dict)
                 
-                # Initialize client with credentials
                 self.client = documentai.DocumentProcessorServiceClient(credentials=credentials)
                 self.processor_name = f"projects/{self.project_id}/locations/{self.location}/processors/{self.processor_id}"
                 logger.info("✅ Google Cloud Document AI initialized with JSON credentials")
-                self.available = True
-                return
-                
+                initialized = True
             except Exception as e:
                 logger.warning(f"Failed to initialize with JSON credentials: {e}")
+
+        # Try default credentials if not initialized via JSON
+        if not initialized:
+            try:
+                self.client = documentai.DocumentProcessorServiceClient()
+                self.processor_name = f"projects/{self.project_id}/locations/{self.location}/processors/{self.processor_id}"
+                logger.info("✅ Google Cloud Document AI initialized with default credentials")
+                initialized = True
+            except Exception as e:
+                logger.warning(f"Failed to initialize with default credentials: {e}")
         
-        # Try default credentials (for local development)
-        try:
-            self.client = documentai.DocumentProcessorServiceClient()
-            self.processor_name = f"projects/{self.project_id}/locations/{self.location}/processors/{self.processor_id}"
-            logger.info("✅ Google Cloud Document AI initialized with default credentials")
-            self.available = True
-        except Exception as e:
-            logger.warning(f"❌ Google Cloud Document AI not available: {e}")
-            logger.info("💡 Tip: Set GOOGLE_APPLICATION_CREDENTIALS_JSON for Railway deployment")
-            self.client = None
-            self.available = False
+        if not initialized:
+            raise ConnectionError(
+                "Could not initialize Google Cloud Document AI client. "
+                "Check credentials (default or GOOGLE_APPLICATION_CREDENTIALS_JSON)."
+            )
     
     def extract_text(self, file_path: str) -> Optional[str]:
         """
@@ -73,10 +69,6 @@ class UnifiedOCR:
         Returns:
             Extracted text or None if extraction fails
         """
-        if not self.available:
-            logger.error("Document AI not available - check credentials and configuration")
-            return None
-        
         try:
             # Validate file
             if not os.path.exists(file_path):
@@ -116,19 +108,47 @@ class UnifiedOCR:
             result = self.client.process_document(request=request)
             document = result.document
             
-            # Extract text
-            text = document.text
+            # Extract text using the new layout-aware method
+            text = self._get_layout_text(document)
             
             if text and len(text.strip()) > 10:
                 logger.info(f"✅ Document AI extraction successful: {len(text)} characters")
                 return text.strip()
             else:
-                logger.warning("Document AI extracted minimal or no text")
+                logger.warning("Layout-aware text extraction yielded minimal text, trying raw text fallback.")
+                # Fallback to raw text if layout parsing is empty
+                raw_text = document.text.strip()
+                if raw_text and len(raw_text) > 10:
+                    logger.info(f"✅ Using raw text fallback: {len(raw_text)} characters")
+                    return raw_text
+                
+                logger.warning("Document AI extracted minimal or no text in both layout and raw modes.")
                 return None
                 
         except Exception as e:
             logger.error(f"Document AI extraction failed: {e}")
             return None
+    
+    def _get_layout_text(self, document: documentai.Document) -> str:
+        """
+        Reconstructs text from the document layout, preserving paragraphs.
+        This provides a cleaner, more readable output than the raw text dump.
+        """
+        text = document.text
+        output_paragraphs = []
+
+        for page in document.pages:
+            for paragraph in page.paragraphs:
+                # Get the text for the paragraph by slicing the full text
+                paragraph_text = ''.join(
+                    text[segment.start_index:segment.end_index]
+                    for segment in paragraph.layout.text_anchor.text_segments
+                )
+                output_paragraphs.append(paragraph_text.strip())
+        
+        # Join all paragraphs with double newlines for clear separation,
+        # creating a format that's easier for other AI models to read.
+        return '\n\n'.join(output_paragraphs)
     
     def _get_mime_type(self, file_path: str) -> str:
         """Determine MIME type based on file extension"""
@@ -155,9 +175,6 @@ class UnifiedOCR:
         Returns:
             Dictionary with document metadata
         """
-        if not self.available:
-            return {"error": "Document AI not available"}
-        
         try:
             with open(file_path, 'rb') as file:
                 file_content = file.read()
@@ -190,74 +207,36 @@ class UnifiedOCR:
             return {"error": str(e)}
 
 
-# Fallback OCR for when Google Cloud is not available
-class FallbackOCR:
-    """Simple fallback OCR using PyMuPDF only"""
-    
-    def __init__(self):
-        self.available = True
-        logger.info("📄 Fallback OCR (PyMuPDF only) initialized")
-    
-    def extract_text(self, file_path: str) -> Optional[str]:
-        """Extract text using PyMuPDF only"""
-        try:
-            import fitz  # PyMuPDF
-            
-            if not os.path.exists(file_path):
-                return None
-            
-            with fitz.open(file_path) as doc:
-                if doc.page_count == 0:
-                    return None
-                
-                text_parts = []
-                for page in doc:
-                    page_text = page.get_text()
-                    if page_text.strip():
-                        text_parts.append(page_text)
-                
-                text = " ".join(text_parts)
-                
-                if len(text.strip()) > 10:
-                    logger.info(f"📄 Fallback OCR extracted {len(text)} characters")
-                    return text.strip()
-                
-            return None
-            
-        except Exception as e:
-            logger.error(f"Fallback OCR failed: {e}")
-            return None
-
-
 # Global OCR instance
 _ocr_instance = None
 
 def get_ocr_service():
-    """Get the best available OCR service"""
+    """
+    Get the Google Cloud Document AI OCR service.
+    This function will raise an error if the service cannot be initialized,
+    making Google Cloud OCR a hard requirement for the application.
+    """
     global _ocr_instance
     
     if _ocr_instance is None:
-        # Try Google Cloud Document AI first
-        unified_ocr = UnifiedOCR()
-        if unified_ocr.available:
-            _ocr_instance = unified_ocr
-            logger.info("🚀 Using Google Cloud Document AI for OCR")
-        else:
-            _ocr_instance = FallbackOCR()
-            logger.info("📄 Using fallback OCR (PyMuPDF only)")
+        try:
+            _ocr_instance = UnifiedOCR()
+            logger.info("🚀 Google Cloud Document AI is the configured OCR service.")
+        except (EnvironmentError, ConnectionError) as e:
+            logger.critical(f"OCR SERVICE FAILED TO INITIALIZE: {e}")
+            logger.critical("The application cannot process documents without a configured OCR service.")
+            raise  # Re-raise the exception to halt application startup
     
     return _ocr_instance
 
-
 def extract_text_unified(file_path: str) -> Optional[str]:
-    """
-    Unified text extraction function
-    
-    Args:
-        file_path: Path to the document file
-        
-    Returns:
-        Extracted text or None if extraction fails
-    """
-    ocr_service = get_ocr_service()
-    return ocr_service.extract_text(file_path) 
+    """Proxy function to call the Google Cloud OCR service"""
+    try:
+        # The service is initialized at startup, so we can expect it to be here.
+        service = get_ocr_service()
+        return service.extract_text(file_path)
+    except Exception as e:
+        # This will catch errors during the *call* to extract_text,
+        # not initialization, which is what we want.
+        logger.error(f"An unexpected error occurred during text extraction: {e}")
+        return None 
