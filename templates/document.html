@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Contract Analysis - {{ doc['filename'] }}{% endblock %}
+{% block title %}Analysis - {{ document.filename }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -85,216 +85,199 @@
 {% endblock %}
 
 {% block content %}
-<div class="document-header">
-    <div class="d-flex justify-content-between align-items-center">
+<div class="container mt-5 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <a href="{{ url_for('doc.index') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+        </a>
+        <h2 class="mb-0 text-truncate" style="max-width: 60%;">{{ document.filename }}</h2>
         <div>
-            <a href="{{ url_for('index') }}" class="back-link mb-3">
-                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            <button class="btn btn-info" id="retry-btn" style="display: none;" onclick="retryAnalysis()">
+                <i class="fas fa-redo me-2"></i>Retry Analysis
+            </button>
+            <a href="{{ url_for('doc.delete_document', doc_id=document.id) }}" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this document?');">
+                <i class="fas fa-trash me-2"></i>Delete
             </a>
-            <h2 class="mb-1 fw-bold">{{ doc['filename'] }}</h2>
-            <p class="text-muted mb-0">Contract Analysis Report</p>
         </div>
-        <div class="text-end">
-            <div class="bg-primary bg-gradient rounded-3 p-3 d-inline-flex">
-                <i class="fas fa-file-contract text-white fa-2x"></i>
+    </div>
+
+    <div class="document-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="mb-1 fw-bold">{{ document.filename }}</h2>
+                <p class="text-muted mb-0">Contract Analysis Report</p>
+            </div>
+            <div class="text-end">
+                <div class="bg-primary bg-gradient rounded-3 p-3 d-inline-flex">
+                    <i class="fas fa-file-contract text-white fa-2x"></i>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<div id="loading" class="card border-0 shadow-sm" {% if doc.status == 'completed' %}style="display: none;"{% endif %}>
-    <div class="card-body text-center p-5">
-        <div class="bg-info bg-gradient rounded-circle p-3 d-inline-flex mb-4">
-            <i class="fas fa-cogs fa-2x text-white"></i>
+    <div id="loading-state" class="text-center p-5" {% if document.status == 'complete' or document.status == 'error' %}style="display: none;"{% endif %}>
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
         </div>
-        <h4 id="loading-status-text" class="fw-bold mb-3">Queueing for processing...</h4>
-        <div class="progress-modern mt-3 mb-4">
-            <div id="progress-bar" class="progress-bar-modern" role="progressbar" style="width: 5%;" aria-valuenow="5" aria-valuemin="0" aria-valuemax="100">
-                <span class="visually-hidden">5% Complete</span>
-            </div>
+        <h4 class="mt-3">Analyzing Your Document...</h4>
+        <p class="text-muted" id="status-message">Current status: {{ document.status }}</p>
+        <div class="progress mt-3" style="height: 20px;">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
         </div>
-        <p class="text-muted mb-0">Your document is being processed. This may take a few moments...</p>
+    </div>
+
+    <div id="analysis-content" {% if document.status != 'complete' and document.status != 'error' %}style="display: none;"{% endif %}>
+        <!-- This will be populated by JavaScript -->
     </div>
 </div>
-
-<div id="analysis-results" {% if doc.status != 'completed' %}style="display: none;"{% endif %}>
-    <!-- Analysis results will be populated here -->
-</div>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const docId = {{ doc['id'] }};
-            const initialStatus = '{{ doc.status }}';
-            const initialAnalysis = {{ doc.analysis|tojson if doc.analysis else 'null' }};
-            
-            const loadingDiv = document.getElementById('loading');
-            const resultsDiv = document.getElementById('analysis-results');
-            const progressBar = document.getElementById('progress-bar');
-            const loadingStatusText = document.getElementById('loading-status-text');
-
-            const statusMap = {
-                'processing': { percent: 5, text: 'Queueing for processing...' },
-                'extracting_text': { percent: 15, text: 'Extracting text from PDF...' },
-                'analyzing_openai': { percent: 45, text: 'Analyzing with Primary AI...' },
-                'analyzing_deepseek': { percent: 85, text: 'Cross-referencing with Secondary AI...' },
-                'combining_results': { percent: 95, text: 'Compiling final report...' },
-                'completed': { percent: 100, text: 'Analysis Complete!' }
-            };
-
-            function checkStatus() {
-                fetch(`/status/${docId}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        const currentStatusInfo = statusMap[data.status];
-                        if (currentStatusInfo) {
-                            progressBar.style.width = `${currentStatusInfo.percent}%`;
-                            progressBar.textContent = `${currentStatusInfo.percent}%`;
-                            progressBar.setAttribute('aria-valuenow', currentStatusInfo.percent);
-                            loadingStatusText.textContent = currentStatusInfo.text;
-                        }
-
-                        if (data.status === 'completed' && data.analysis) {
-                            loadingDiv.style.display = 'none';
-                            resultsDiv.style.display = 'block';
-                            renderAnalysis(data.analysis);
-                        } else if (data.status === 'error') {
-                            loadingDiv.innerHTML = '<p class="text-danger text-center">An error occurred during analysis. Please try another document.</p>';
-                        } else {
-                            setTimeout(checkStatus, 2500);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching status:', error);
-                        loadingDiv.innerHTML = '<p class="text-danger text-center">Could not retrieve analysis status.</p>';
-                    });
-            }
-
-            function getRiskColor(severity) {
-                if (severity > 75) return 'high';
-                if (severity > 40) return 'medium';
-                return 'low';
-            }
-
-            function renderAnalysis(analysis) {
-                if (!analysis) {
-                    resultsDiv.innerHTML = '<p class="text-danger">Analysis data is missing or invalid.</p>';
-                    return;
-                }
-                
-                if (analysis.error) {
-                    resultsDiv.innerHTML = `
-                        <div class="alert alert-danger">
-                            <h4><i class="fas fa-exclamation-triangle"></i> Analysis Failed</h4>
-                            <p>The analysis could not be completed. The server reported the following issue:</p>
-                            <p><strong>${analysis.error}</strong></p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                // Calculate overall risk score as an average of clause risks, or display a placeholder
-                const clauses = analysis.clauses || [];
-                let overallRiskScore = "N/A";
-                if (clauses.length > 0) {
-                    const totalScore = clauses.reduce((sum, clause) => sum + (clause.risk_score || 0), 0);
-                    overallRiskScore = Math.round(totalScore / clauses.length);
-                }
-
-                let resultsHTML = `
-                    <div class="row mb-4">
-                        <div class="col-md-4">
-                            <div class="risk-score-card border-0 shadow-sm mb-4">
-                                <h6 class="mb-3 opacity-75">Overall Risk Score</h6>
-                                <div class="risk-score-number">${overallRiskScore}</div>
-                                <p class="mb-0 opacity-75">Out of 100</p>
-                            </div>
-                        </div>
-                        <div class="col-md-8">
-                             <div class="card border-0 shadow-sm mb-4">
-                                <div class="card-body p-4">
-                                    <div class="d-flex align-items-center mb-3">
-                                        <div class="bg-success bg-gradient rounded-3 p-2 me-3">
-                                            <i class="fas fa-chart-line text-white"></i>
-                                        </div>
-                                        <h5 class="card-title mb-0 fw-bold">Executive Summary</h5>
-                                    </div>
-                                    <p class="mb-0">${analysis.summary || "No summary provided."}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="d-flex align-items-center mb-4">
-                        <div class="bg-warning bg-gradient rounded-3 p-2 me-3">
-                            <i class="fas fa-exclamation-triangle text-white"></i>
-                        </div>
-                        <h3 class="mb-0 fw-bold">Identified Risk Clauses</h3>
-                    </div>
-                `;
-
-                if (clauses.length > 0) {
-                    clauses.forEach(risk => {
-                        const riskColor = getRiskColor(risk.risk_score);
-                        resultsHTML += `
-                            <div class="card risk-card risk-${riskColor} border-0 shadow-sm mb-4">
-                                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center py-3">
-                                    <div class="d-flex align-items-center">
-                                        <div class="bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'} bg-gradient rounded-3 p-2 me-3">
-                                            <i class="fas fa-exclamation-triangle text-white"></i>
-                                        </div>
-                                        <h5 class="mb-0 fw-bold">${risk.type}</h5>
-                                    </div>
-                                    <span class="badge bg-${riskColor === 'high' ? 'danger' : riskColor === 'medium' ? 'warning' : 'success'} px-3 py-2">${risk.risk_score} / 100</span>
-                                </div>
-                                <div class="card-body p-4">
-                                    <div class="mb-4">
-                                        <h6 class="fw-semibold mb-2 text-primary">Risk Explanation</h6>
-                                        <p class="mb-0">${risk.clause || 'Not available.'}</p>
-                                    </div>
-                                    <div class="mb-4">
-                                        <h6 class="fw-semibold mb-2 text-danger">Consequences</h6>
-                                        <p class="mb-0">${risk.consequences || 'Not available.'}</p>
-                                    </div>
-                                    <div class="mb-4">
-                                        <h6 class="fw-semibold mb-2 text-success">Recommendation</h6>
-                                        <p class="mb-0">${risk.mitigation || 'Not available.'}</p>
-                                    </div>
-                                    <div>
-                                        <h6 class="fw-semibold mb-3 text-info">Relevant Contract Text</h6>
-                                        <div class="quote">
-                                            ${risk.exact_text || 'Exact text not extracted.'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    });
-                } else {
-                    resultsHTML += '<p>No significant risks were identified in this document.</p>';
-                }
-                resultsDiv.innerHTML = resultsHTML;
-            }
-
-            // Initial setup based on server-rendered data
-            if (initialStatus === 'completed' && initialAnalysis) {
-                renderAnalysis(initialAnalysis);
-            } else if (initialStatus !== 'completed' && initialStatus !== 'error') {
-                const initialStatusInfo = statusMap[initialStatus];
-                if (initialStatusInfo) {
-                    progressBar.style.width = `${initialStatusInfo.percent}%`;
-                    progressBar.textContent = `${initialStatusInfo.percent}%`;
-                    progressBar.setAttribute('aria-valuenow', initialStatusInfo.percent);
-                    loadingStatusText.textContent = initialStatusInfo.text;
-                }
-                setTimeout(checkStatus, 1000); // Start polling
-            } else if (initialStatus === 'error') {
-                 loadingDiv.innerHTML = '<p class="text-danger text-center">An error occurred during analysis. Please try another document.</p>';
-            }
-        });
-    </script>
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
 <script>
-// Additional JavaScript for document page can go here
+    document.addEventListener('DOMContentLoaded', function() {
+        const docId = {{ document.id }};
+        const statusElement = document.getElementById('status');
+        const pollUrl = "{{ url_for('doc.status', doc_id=docId) }}";
+
+        const loadingContainer = document.getElementById('loading-state');
+        const analysisContainer = document.getElementById('analysis-content');
+        const progressBar = document.getElementById('progress-bar');
+        const statusMessage = document.getElementById('status-message');
+        const retryBtn = document.getElementById('retry-btn');
+
+        const statusMap = {
+            'uploaded': { percent: 10, message: 'File uploaded, waiting in queue...' },
+            'extracting_text': { percent: 30, message: 'Extracting text from document...' },
+            'analyzing_openai': { percent: 70, message: 'Analyzing with AI...' },
+            'complete': { percent: 100, message: 'Analysis Complete!' },
+            'error': { percent: 100, message: 'An error occurred.' }
+        };
+
+        function updateProgress(status) {
+            const statusInfo = statusMap[status] || { percent: 0, message: `Status: ${status}` };
+            progressBar.style.width = statusInfo.percent + '%';
+            progressBar.setAttribute('aria-valuenow', statusInfo.percent);
+            progressBar.textContent = statusInfo.percent + '%';
+            statusMessage.textContent = statusInfo.message;
+        }
+
+        function pollForStatus() {
+            fetch(pollUrl)
+                .then(response => response.json())
+                .then(data => {
+                    updateProgress(data.status);
+
+                    if (data.status === 'complete') {
+                        loadingContainer.style.display = 'none';
+                        analysisContainer.innerHTML = generateAnalysisHtml(data.analysis);
+                        analysisContainer.style.display = 'block';
+                    } else if (data.status === 'error') {
+                        loadingContainer.style.display = 'none';
+                        analysisContainer.innerHTML = generateErrorHtml(data.error_message);
+                        analysisContainer.style.display = 'block';
+                        retryBtn.style.display = 'inline-block';
+                    } else {
+                        // If still processing, poll again after a delay
+                        setTimeout(pollForStatus, 3000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error polling for status:', error);
+                    analysisContainer.innerHTML = generateErrorHtml('Could not retrieve analysis status.');
+                });
+        }
+
+        function generateErrorHtml(errorMessage) {
+            return `
+                <div class="alert alert-danger text-center">
+                    <h4><i class="fas fa-times-circle me-2"></i>Analysis Failed</h4>
+                    <p>${errorMessage || 'An unknown error occurred during processing.'}</p>
+                </div>
+            `;
+        }
+
+        function generateAnalysisHtml(analysis) {
+            if (!analysis) return generateErrorHtml('The analysis result is empty.');
+
+            let partiesHtml = analysis.parties_involved.map(p => `<li><strong>${p.name || 'N/A'}:</strong> ${p.role || 'N/A'}</li>`).join('');
+            if (!partiesHtml) partiesHtml = '<p class="text-muted">No parties were clearly identified.</p>';
+
+            let clausesHtml = analysis.risk_clauses.map(c => `
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">${c.clause_type || 'Uncategorized Clause'}</h6>
+                        <span class="badge bg-${getRiskColor(c.risk_level)}">${c.risk_level || 'Unknown'} Risk</span>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Explanation:</strong> ${c.explanation || 'No explanation provided.'}</p>
+                        <hr>
+                        <p class="text-muted fst-italic"><strong>Original Text:</strong> "${c.exact_text || 'Original text not extracted.'}"</p>
+                    </div>
+                </div>
+            `).join('');
+            if (!clausesHtml) clausesHtml = '<div class="alert alert-info">No specific risk clauses were identified in the analysis.</div>';
+            
+            return `
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        <h4 class="mb-0">Analysis Summary</h4>
+                    </div>
+                    <div class="card-body">
+                        <p>${analysis.summary || 'No summary was generated.'}</p>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm mt-4">
+                    <div class="card-header">
+                        <h4 class="mb-0">Parties Involved</h4>
+                    </div>
+                    <div class="card-body">
+                        <ul>${partiesHtml}</ul>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm mt-4">
+                    <div class="card-header">
+                        <h4 class="mb-0">Identified Risk Clauses</h4>
+                    </div>
+                    <div class="card-body">
+                        ${clausesHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function getRiskColor(level) {
+            switch(level ? level.toLowerCase() : '') {
+                case 'high': return 'danger';
+                case 'medium': return 'warning';
+                case 'low': return 'success';
+                default: return 'secondary';
+            }
+        }
+
+        // Initial check
+        if (loadingContainer.style.display !== 'none') {
+            pollForStatus();
+        } else if (document.getElementById('analysis-content').innerHTML.trim() === '') {
+            // If content is meant to be visible but is empty, populate it
+            // This happens on a direct page load of a completed/errored document
+            fetch(pollUrl)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'complete') {
+                        analysisContainer.innerHTML = generateAnalysisHtml(data.analysis);
+                    } else if (data.status === 'error') {
+                        analysisContainer.innerHTML = generateErrorHtml(data.error_message);
+                        retryBtn.style.display = 'inline-block';
+                    }
+                });
+        }
+    });
+
+    function retryAnalysis() {
+        // Implement retry logic if needed
+        alert('Retry functionality not yet implemented.');
+    }
 </script>
 {% endblock %} 

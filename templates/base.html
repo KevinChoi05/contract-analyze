@@ -155,12 +155,13 @@
             </a>
             {% if session.user_id %}
             <div class="navbar-nav ms-auto">
-                <span class="navbar-text me-3">
-                    <i class="fas fa-user me-1"></i>{{ session.user_id }}
-                </span>
-                <a class="nav-link" href="{{ url_for('logout') }}">
-                    <i class="fas fa-sign-out-alt me-1"></i>Logout
-                </a>
+                <div class="d-flex align-items-center">
+                    <a href="{{ url_for('doc.index') }}" class="btn btn-sm btn-outline-primary me-2">Dashboard</a>
+                    <span class="navbar-text me-3">
+                        <i class="fas fa-user me-1"></i>{{ session.user_id }}
+                    </span>
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-danger">Logout</a>
+                </div>
             </div>
             {% endif %}
         </div>
