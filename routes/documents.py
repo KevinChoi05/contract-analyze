@@ -285,4 +285,18 @@ def retry_document(doc_id):
         return jsonify({'error': 'Failed to retry document processing'}), 500
     finally:
         if conn:
-            conn.close() 
+            conn.close()
+
+@doc_bp.route('/dashboard')
+@login_required
+def dashboard():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute(
+        "SELECT id, filename, status, upload_time FROM documents WHERE user_id = %s ORDER BY upload_time DESC",
+        (session['user_id'],)
+    )
+    documents = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('index.html', documents=documents) 

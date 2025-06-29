@@ -100,10 +100,10 @@ def create_app():
 
     # --- Core Routes & Error Handlers ---
     @app.route('/')
-    def index():
-        if 'user_id' not in session:
-            return redirect(url_for('auth.login'))
-        return render_template('index.html')
+    def root():
+        if 'user_id' in session:
+            return redirect(url_for('doc.dashboard'))
+        return redirect(url_for('auth.login'))
 
     @app.route('/health')
     def health_check():
