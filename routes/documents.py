@@ -10,7 +10,7 @@ from database import get_db_connection
 from core import extract_text_robust, analyze_contract
 
 logger = logging.getLogger(__name__)
-doc_bp = Blueprint('doc', __name__, template_folder='templates')
+doc_bp = Blueprint('doc', __name__)
 
 def analyze_document(doc_id, app_context):
     """Background function to analyze document with progress updates."""

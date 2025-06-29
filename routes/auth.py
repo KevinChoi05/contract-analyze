@@ -5,7 +5,7 @@ from psycopg2.extras import RealDictCursor
 from database import get_db_connection
 
 logger = logging.getLogger(__name__)
-auth_bp = Blueprint('auth', __name__, template_folder='templates')
+auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
