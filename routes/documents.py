@@ -88,7 +88,7 @@ def document_page(doc_id):
         if not doc:
             abort(404)
             
-        return render_template('document.html', doc=doc)
+        return render_template('document.html', document=doc)
     except Exception as e:
         logger.error(f"Error fetching document page for doc_id {doc_id}: {e}")
         abort(500)

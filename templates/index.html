@@ -206,15 +206,12 @@
                 </div>
                 
                 <div class="d-grid gap-2">
-                    <a href="{{ url_for('doc.dashboard') }}" class="btn btn-outline-primary btn-sm">
-                        <i class="fas fa-upload me-2"></i>Upload Document
-                    </a>
                     <a href="{{ url_for('doc.dashboard') }}" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-clock me-2"></i>View Activity
+                        <i class="fas fa-history me-2"></i>View Full History
                     </a>
-                    <span class="btn btn-outline-info btn-sm disabled">
+                    <button class="btn btn-outline-info btn-sm" onclick="alert('Export feature coming soon!')">
                         <i class="fas fa-download me-2"></i>Export Data
-                    </span>
+                    </button>
                 </div>
             </div>
         </div>
