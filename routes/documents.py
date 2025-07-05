@@ -287,9 +287,17 @@ def retry_document(doc_id):
         if conn:
             conn.close()
 
+@doc_bp.route('/')
+@doc_bp.route('/index')
+def index():
+    """Index route that redirects to dashboard"""
+    return redirect(url_for('doc.dashboard'))
+
 @doc_bp.route('/dashboard')
-@login_required
 def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('auth.login'))
+    
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute(
