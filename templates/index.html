@@ -204,7 +204,7 @@
     </div>
 </div>
 
-<form id="uploadForm" action="{{ url_for('doc.upload') }}" method="post" enctype="multipart/form-data" style="display:none;"></form>
+        <form id="uploadForm" action="{{ url_for('doc.upload_file') }}" method="post" enctype="multipart/form-data" style="display:none;"></form>
 
 <!-- Document List Template -->
 <script type="text/template" id="document-item-template">
@@ -282,7 +282,7 @@ document.addEventListener('DOMContentLoaded', function() {
             formData.append('file', files[0]);
 
             let xhr = new XMLHttpRequest();
-            xhr.open('POST', "{{ url_for('doc.upload') }}", true);
+                            xhr.open('POST', "{{ url_for('doc.upload_file') }}", true);
 
             xhr.upload.addEventListener('progress', function(e) {
                 if (e.lengthComputable) {
