@@ -277,12 +277,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function handleFiles(files) {
         if (files.length > 0) {
-            uploadForm.appendChild(files[0].name, files[0]);
-            let formData = new FormData(uploadForm);
+            let formData = new FormData();
             formData.append('file', files[0]);
 
             let xhr = new XMLHttpRequest();
-                            xhr.open('POST', "{{ url_for('doc.upload_file') }}", true);
+            xhr.open('POST', "{{ url_for('doc.upload_file') }}", true);
 
             xhr.upload.addEventListener('progress', function(e) {
                 if (e.lengthComputable) {
@@ -322,13 +321,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function fetchDocuments(searchTerm = '') {
     const documentsList = document.getElementById('documentsList');
-    const url = `/api/documents?search=${encodeURIComponent(searchTerm)}`;
+    const url = `{{ url_for('doc.get_documents') }}`;
 
     fetch(url)
         .then(response => response.json())
         .then(data => {
-            renderDocuments(data.documents);
-            updateDashboardStats(data.stats);
+            renderDocuments(data);
+            updateDashboardStats(data);
         })
         .catch(error => console.error('Error fetching documents:', error));
 }
@@ -350,7 +349,7 @@ function renderDocuments(documents) {
     documents.forEach(doc => {
         let icon, color, statusText;
         switch(doc.status) {
-            case 'complete':
+            case 'completed':
                 icon = 'fa-check-circle';
                 color = 'text-success';
                 statusText = 'Complete';
@@ -363,15 +362,15 @@ function renderDocuments(documents) {
             default:
                 icon = 'fa-spinner fa-spin';
                 color = 'text-warning';
-                statusText = 'In Progress';
+                statusText = 'Processing';
         }
 
         const rendered = template
-            .replace('{{link}}', `{{ url_for('doc.document', doc_id='${doc.id}') }}`)
+            .replace('{{link}}', `/document/${doc.id}`)
             .replace('{{icon}}', icon)
             .replace('{{color}}', color)
             .replace('{{filename}}', doc.filename)
-            .replace('{{time}}', new Date(doc.upload_time).toLocaleString())
+            .replace('{{time}}', new Date(doc.created_at).toLocaleString())
             .replace('{{status_text}}', statusText)
             .replace('{{id}}', doc.id);
 
@@ -380,18 +379,15 @@ function renderDocuments(documents) {
 }
 
 
-function updateDashboardStats(stats) {
-    document.getElementById('totalDocs').textContent = stats.total;
-    document.getElementById('completedDocs').textContent = stats.completed;
-    document.getElementById('avgRiskScore').textContent = stats.avg_risk_score || '--';
-    document.getElementById('highRiskDocs').textContent = stats.high_risk;
+function updateDashboardStats(documents) {
+    const total = documents.length;
+    const completed = documents.filter(doc => doc.status === 'completed').length;
+    const errors = documents.filter(doc => doc.status === 'error').length;
     
-    if (stats.risk_distribution && stats.risk_distribution.High > 0) {
-         renderRiskChart(stats.risk_distribution);
-         document.getElementById('riskChart').style.display = 'block';
-    } else {
-         document.getElementById('riskChart').style.display = 'none';
-    }
+    document.getElementById('totalDocs').textContent = total;
+    document.getElementById('completedDocs').textContent = completed;
+    document.getElementById('avgRiskScore').textContent = '--';
+    document.getElementById('highRiskDocs').textContent = errors;
 }
 
 function renderRiskChart(riskData) {
