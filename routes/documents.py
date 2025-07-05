@@ -301,7 +301,7 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute(
-        "SELECT id, filename, status, upload_time FROM documents WHERE user_id = %s ORDER BY upload_time DESC",
+        "SELECT id, filename, status, created_at FROM documents WHERE user_id = %s ORDER BY created_at DESC",
         (session['user_id'],)
     )
     documents = cursor.fetchall()

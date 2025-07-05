@@ -24,7 +24,7 @@ def login():
                 session['user_id'] = user['id']
                 session['username'] = username
                 logger.info(f"User {username} logged in successfully")
-                return redirect(url_for('index'))
+                return redirect(url_for('root'))
         except Exception as e:
             logger.error(f"Database login error: {e}")
             flash('An error occurred during login. Please try again.', 'error')
@@ -72,7 +72,7 @@ def register():
             session['username'] = username
             
             flash('Registration successful! You are now logged in.', 'success')
-            return redirect(url_for('index'))
+            return redirect(url_for('root'))
             
         except Exception as e:
             logger.error(f"Database registration error: {e}")
