@@ -16,7 +16,7 @@
                     </div>
                     <div class="flex-grow-1 ms-3">
                         <div class="small text-muted">Total Documents</div>
-                        <div class="h4 mb-0" id="totalDocs">0</div>
+                        <div class="h4 mb-0">{{ documents|length }}</div>
                     </div>
                 </div>
             </div>
@@ -34,7 +34,7 @@
                     </div>
                     <div class="flex-grow-1 ms-3">
                         <div class="small text-muted">Completed Analysis</div>
-                        <div class="h4 mb-0" id="completedDocs">0</div>
+                        <div class="h4 mb-0">{{ documents|selectattr("status", "equalto", "completed")|list|length }}</div>
                     </div>
                 </div>
             </div>
@@ -52,7 +52,7 @@
                     </div>
                     <div class="flex-grow-1 ms-3">
                         <div class="small text-muted">Avg Risk Score</div>
-                        <div class="h4 mb-0" id="avgRiskScore">--</div>
+                        <div class="h4 mb-0">--</div>
                     </div>
                 </div>
             </div>
@@ -70,7 +70,7 @@
                     </div>
                     <div class="flex-grow-1 ms-3">
                         <div class="small text-muted">High Risk Docs</div>
-                        <div class="h4 mb-0" id="highRiskDocs">0</div>
+                        <div class="h4 mb-0">{{ documents|selectattr("status", "equalto", "error")|list|length }}</div>
                     </div>
                 </div>
             </div>
@@ -91,32 +91,29 @@
                     <h5 class="card-title mb-0">Upload New Contract</h5>
                 </div>
                 
-                <div class="upload-area modern" id="uploadArea">
-                    <div class="upload-content">
-                        <div class="upload-icon mb-3">
-                            <i class="fas fa-file-pdf fa-3x text-primary"></i>
+                <form action="{{ url_for('doc.upload_file') }}" method="post" enctype="multipart/form-data">
+                    <div class="upload-area modern">
+                        <div class="upload-content">
+                            <div class="upload-icon mb-3">
+                                <i class="fas fa-file-pdf fa-3x text-primary"></i>
+                            </div>
+                            <h6 class="mb-2">Upload PDF Contract</h6>
+                            <p class="text-muted mb-3">Select a PDF file to analyze</p>
+                            <div class="mb-3">
+                                <span class="badge bg-light text-dark">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Maximum file size: 50MB
+                                </span>
+                            </div>
+                            <div class="mb-3">
+                                <input type="file" name="file" accept=".pdf" class="form-control" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-upload me-2"></i>Upload & Analyze
+                            </button>
                         </div>
-                        <h6 class="mb-2">Drag & Drop PDF Files</h6>
-                        <p class="text-muted mb-3">or click to browse</p>
-                        <div class="mb-3">
-                            <span class="badge bg-light text-dark">
-                                <i class="fas fa-info-circle me-1"></i>
-                                Maximum file size: 50MB
-                            </span>
-                        </div>
-                        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
-                        <button class="btn btn-primary btn-lg" onclick="document.getElementById('fileInput').click()">
-                            <i class="fas fa-plus me-2"></i>Choose File
-                        </button>
                     </div>
-                </div>
-                
-                <div id="uploadProgress" style="display: none;">
-                    <div class="progress mb-3" style="height: 8px;">
-                        <div class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
-                    </div>
-                    <p class="text-center mb-0 text-muted" id="progressText">Uploading...</p>
-                </div>
+                </form>
             </div>
         </div>
         
@@ -131,23 +128,67 @@
                         <h5 class="card-title mb-0">Recent Documents</h5>
                     </div>
                     <div class="d-flex align-items-center">
-                        <div class="input-group input-group-sm" style="width: 250px;">
-                            <span class="input-group-text bg-light border-0">
-                                <i class="fas fa-search text-muted"></i>
-                            </span>
-                            <input type="text" class="form-control border-0 bg-light" placeholder="Search documents..." id="searchInput">
-                        </div>
+                        <form method="get" action="{{ url_for('doc.dashboard') }}">
+                            <div class="input-group input-group-sm" style="width: 250px;">
+                                <span class="input-group-text bg-light border-0">
+                                    <i class="fas fa-search text-muted"></i>
+                                </span>
+                                <input type="text" name="search" class="form-control border-0 bg-light" placeholder="Search documents..." value="{{ request.args.get('search', '') }}">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm">Search</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
              <div class="card-body">
-                <div id="documentsList">
+                {% if documents %}
+                    <div class="list-group">
+                        {% for doc in documents %}
+                        <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                            <a href="{{ url_for('doc.document_page', doc_id=doc.id) }}" class="text-decoration-none text-dark flex-grow-1">
+                                <div class="d-flex align-items-center">
+                                    <div class="me-3">
+                                        {% if doc.status == 'completed' %}
+                                            <i class="fas fa-check-circle text-success fa-lg"></i>
+                                        {% elif doc.status == 'error' %}
+                                            <i class="fas fa-times-circle text-danger fa-lg"></i>
+                                        {% else %}
+                                            <i class="fas fa-spinner fa-spin text-warning fa-lg"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="w-100">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1 text-truncate" style="max-width: 300px;">{{ doc.filename }}</h6>
+                                            <small class="text-muted">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                                        </div>
+                                        <p class="mb-1 text-muted small">Status: 
+                                            <span class="fw-bold">
+                                                {% if doc.status == 'completed' %}Complete
+                                                {% elif doc.status == 'error' %}Error
+                                                {% else %}Processing
+                                                {% endif %}
+                                            </span>
+                                        </p>
+                                    </div>
+                                </div>
+                            </a>
+                            <div class="ms-3">
+                                <form action="{{ url_for('doc.delete_document', doc_id=doc.id) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this document?')">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
                     <div class="text-center py-5">
                         <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
                         <h6 class="text-muted">No documents uploaded yet</h6>
                         <p class="text-muted small">Upload your first contract to get started</p>
                     </div>
-                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -165,15 +206,15 @@
                 </div>
                 
                 <div class="d-grid gap-2">
-                    <button class="btn btn-outline-primary btn-sm" onclick="document.getElementById('fileInput').click()">
+                    <a href="{{ url_for('doc.dashboard') }}" class="btn btn-outline-primary btn-sm">
                         <i class="fas fa-upload me-2"></i>Upload Document
-                    </button>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="showRecentActivity()">
+                    </a>
+                    <a href="{{ url_for('doc.dashboard') }}" class="btn btn-outline-secondary btn-sm">
                         <i class="fas fa-clock me-2"></i>View Activity
-                    </button>
-                    <button class="btn btn-outline-info btn-sm" onclick="exportData()">
+                    </a>
+                    <span class="btn btn-outline-info btn-sm disabled">
                         <i class="fas fa-download me-2"></i>Export Data
-                    </button>
+                    </span>
                 </div>
             </div>
         </div>
@@ -204,251 +245,8 @@
     </div>
 </div>
 
-        <form id="uploadForm" action="{{ url_for('doc.upload_file') }}" method="post" enctype="multipart/form-data" style="display:none;"></form>
 
-<!-- Document List Template -->
-<script type="text/template" id="document-item-template">
-    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
-        <a href="{{link}}" class="text-decoration-none text-dark flex-grow-1">
-            <div class="d-flex align-items-center">
-                <div class="me-3">
-                    <i class="fas {{icon}} {{color}} fa-lg"></i>
-                </div>
-                <div class="w-100">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h6 class="mb-1 text-truncate" style="max-width: 300px;">{{filename}}</h6>
-                        <small class="text-muted">{{time}}</small>
-                    </div>
-                    <p class="mb-1 text-muted small">Status: <span class="fw-bold">{{status_text}}</span></p>
-                </div>
-            </div>
-        </a>
-        <div class="ms-3">
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteDocument('{{id}}', event)">
-                <i class="fas fa-trash-alt"></i>
-            </button>
-        </div>
-    </div>
-</script>
 
 {% endblock %}
 
-{% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const uploadArea = document.getElementById('uploadArea');
-    const fileInput = document.getElementById('fileInput');
-    const uploadForm = document.getElementById('uploadForm');
-    const uploadProgress = document.getElementById('uploadProgress');
-    const progressBar = uploadProgress.querySelector('.progress-bar');
-    const progressText = document.getElementById('progressText');
-    const searchInput = document.getElementById('searchInput');
-
-    // --- Drag and Drop ---
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, preventDefaults, false);
-    });
-
-    function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-
-    ['dragenter', 'dragover'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, () => uploadArea.classList.add('highlight'), false);
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, () => uploadArea.classList.remove('highlight'), false);
-    });
-
-    uploadArea.addEventListener('drop', handleDrop, false);
-    
-    function handleDrop(e) {
-        let dt = e.dataTransfer;
-        let files = dt.files;
-        handleFiles(files);
-    }
-    
-    fileInput.addEventListener('change', function() {
-        handleFiles(this.files);
-    }, false);
-
-    function handleFiles(files) {
-        if (files.length > 0) {
-            let formData = new FormData();
-            formData.append('file', files[0]);
-
-            let xhr = new XMLHttpRequest();
-            xhr.open('POST', "{{ url_for('doc.upload_file') }}", true);
-
-            xhr.upload.addEventListener('progress', function(e) {
-                if (e.lengthComputable) {
-                    let percentComplete = (e.loaded / e.total) * 100;
-                    progressBar.style.width = percentComplete + '%';
-                    progressText.textContent = `Uploading... ${Math.round(percentComplete)}%`;
-                }
-            });
-
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4) {
-                    if (xhr.status === 200) {
-                        let data = JSON.parse(xhr.responseText);
-                        window.location.href = data.redirect_url;
-                    } else {
-                        alert('Upload failed. Please try again.');
-                        uploadProgress.style.display = 'none';
-                        uploadArea.style.display = 'block';
-                    }
-                }
-            };
-            
-            uploadArea.style.display = 'none';
-            uploadProgress.style.display = 'block';
-            xhr.send(formData);
-        }
-    }
-    
-    // --- Initial Data Load ---
-    fetchDocuments();
-    
-    // --- Search Functionality ---
-    searchInput.addEventListener('input', function() {
-        fetchDocuments(this.value);
-    });
-});
-
-function fetchDocuments(searchTerm = '') {
-    const documentsList = document.getElementById('documentsList');
-    const url = `{{ url_for('doc.get_documents') }}`;
-
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            renderDocuments(data);
-            updateDashboardStats(data);
-        })
-        .catch(error => console.error('Error fetching documents:', error));
-}
-
-function renderDocuments(documents) {
-    const documentsList = document.getElementById('documentsList');
-    const template = document.getElementById('document-item-template').innerHTML;
-    documentsList.innerHTML = ''; // Clear current list
-
-    if (documents.length === 0) {
-        documentsList.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-search fa-3x text-muted mb-3"></i>
-                <h6 class="text-muted">No documents found</h6>
-            </div>`;
-        return;
-    }
-
-    documents.forEach(doc => {
-        let icon, color, statusText;
-        switch(doc.status) {
-            case 'completed':
-                icon = 'fa-check-circle';
-                color = 'text-success';
-                statusText = 'Complete';
-                break;
-            case 'error':
-                icon = 'fa-times-circle';
-                color = 'text-danger';
-                statusText = 'Error';
-                break;
-            default:
-                icon = 'fa-spinner fa-spin';
-                color = 'text-warning';
-                statusText = 'Processing';
-        }
-
-        const rendered = template
-            .replace('{{link}}', `/document/${doc.id}`)
-            .replace('{{icon}}', icon)
-            .replace('{{color}}', color)
-            .replace('{{filename}}', doc.filename)
-            .replace('{{time}}', new Date(doc.created_at).toLocaleString())
-            .replace('{{status_text}}', statusText)
-            .replace('{{id}}', doc.id);
-
-        documentsList.innerHTML += rendered;
-    });
-}
-
-
-function updateDashboardStats(documents) {
-    const total = documents.length;
-    const completed = documents.filter(doc => doc.status === 'completed').length;
-    const errors = documents.filter(doc => doc.status === 'error').length;
-    
-    document.getElementById('totalDocs').textContent = total;
-    document.getElementById('completedDocs').textContent = completed;
-    document.getElementById('avgRiskScore').textContent = '--';
-    document.getElementById('highRiskDocs').textContent = errors;
-}
-
-function renderRiskChart(riskData) {
-    const ctx = document.getElementById('riskDistributionChart').getContext('2d');
-    if (window.riskChart instanceof Chart) {
-        window.riskChart.destroy();
-    }
-    window.riskChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['High', 'Medium', 'Low'],
-            datasets: [{
-                label: 'Risk Distribution',
-                data: [riskData.High, riskData.Medium, riskData.Low],
-                backgroundColor: [
-                    'rgba(220, 53, 69, 0.8)',
-                    'rgba(255, 193, 7, 0.8)',
-                    'rgba(25, 135, 84, 0.8)'
-                ],
-                borderColor: [
-                    'rgba(220, 53, 69, 1)',
-                    'rgba(255, 193, 7, 1)',
-                    'rgba(25, 135, 84, 1)'
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                },
-                title: {
-                    display: true,
-                    text: 'Risk Clause Distribution'
-                }
-            }
-        }
-    });
-}
-
-function deleteDocument(docId, event) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    if (confirm('Are you sure you want to permanently delete this document and its analysis?')) {
-        fetch(`{{ url_for('doc.delete_document', doc_id='${docId}') }}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        }).then(response => {
-            if (response.ok) {
-                fetchDocuments(); // Refresh the list
-            } else {
-                alert('Failed to delete document.');
-            }
-        });
-    }
-}
-</script>
 {% endblock %} 

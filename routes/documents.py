@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 from datetime import datetime
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, abort
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, abort, flash
 from werkzeug.utils import secure_filename
 from psycopg2.extras import RealDictCursor
 from database import get_db_connection
@@ -96,10 +96,10 @@ def document_page(doc_id):
         if conn:
             conn.close()
 
-@doc_bp.route('/document/<int:doc_id>', methods=['DELETE'])
+@doc_bp.route('/document/<int:doc_id>/delete', methods=['POST'])
 def delete_document(doc_id):
     if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
+        return redirect(url_for('auth.login'))
 
     conn = None
     try:
@@ -111,7 +111,8 @@ def delete_document(doc_id):
         doc = cursor.fetchone()
         
         if not doc:
-            return jsonify({'error': 'Document not found or you do not have permission'}), 404
+            flash('Document not found or you do not have permission', 'error')
+            return redirect(url_for('doc.dashboard'))
 
         # Delete the record from the database
         cursor.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
@@ -127,11 +128,13 @@ def delete_document(doc_id):
             logger.error(f"Could not delete physical file {doc['filepath']}: {e}")
             
         logger.info(f"User {session['username']} deleted document with ID {doc_id}")
-        return jsonify({'message': 'Document deleted successfully'}), 200
+        flash('Document deleted successfully', 'success')
+        return redirect(url_for('doc.dashboard'))
 
     except Exception as e:
         logger.error(f"Error deleting document {doc_id}: {e}")
-        return jsonify({'error': 'An error occurred while deleting the document.'}), 500
+        flash('An error occurred while deleting the document.', 'error')
+        return redirect(url_for('doc.dashboard'))
     finally:
         if conn:
             conn.close()
@@ -178,11 +181,8 @@ def upload_file():
             thread.start()
             
             logger.info(f"Document uploaded successfully: {filename} (ID: {doc_id}) by user {session.get('username', 'unknown')}")
-            return jsonify({
-                'doc_id': doc_id,
-                'message': 'File uploaded successfully. Analysis in progress.',
-                'redirect_url': url_for('doc.document_page', doc_id=doc_id)
-            })
+            flash('File uploaded successfully. Analysis in progress.', 'success')
+            return redirect(url_for('doc.document_page', doc_id=doc_id))
 
         except Exception as e:
             logger.error(f"Upload error for user {session.get('username', 'unknown')}: {e}")
@@ -190,12 +190,14 @@ def upload_file():
                 try:
                     os.remove(filepath)
                 except: pass
-            return jsonify({'error': "Failed to upload file. Please try again."}), 500
+            flash('Failed to upload file. Please try again.', 'error')
+            return redirect(url_for('doc.dashboard'))
         finally:
             if conn:
                 conn.close()
     
-    return jsonify({'error': 'Invalid file type. Please upload a PDF file.'}), 400
+    flash('Invalid file type. Please upload a PDF file.', 'error')
+    return redirect(url_for('doc.dashboard'))
 
 @doc_bp.route('/status/<int:doc_id>')
 def get_status(doc_id):
@@ -298,12 +300,22 @@ def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('auth.login'))
     
+    search_term = request.args.get('search', '').strip()
+    
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute(
-        "SELECT id, filename, status, created_at FROM documents WHERE user_id = %s ORDER BY created_at DESC",
-        (session['user_id'],)
-    )
+    
+    if search_term:
+        cursor.execute(
+            "SELECT id, filename, status, created_at FROM documents WHERE user_id = %s AND filename ILIKE %s ORDER BY created_at DESC",
+            (session['user_id'], f'%{search_term}%')
+        )
+    else:
+        cursor.execute(
+            "SELECT id, filename, status, created_at FROM documents WHERE user_id = %s ORDER BY created_at DESC",
+            (session['user_id'],)
+        )
+    
     documents = cursor.fetchall()
     cursor.close()
     conn.close()
