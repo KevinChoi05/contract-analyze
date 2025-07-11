@@ -136,7 +136,6 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const docId = {{ document.id }};
-        const statusElement = document.getElementById('status');
         const pollUrl = "{{ url_for('doc.status', doc_id=docId) }}";
 
         const loadingContainer = document.getElementById('loading-state');
@@ -145,20 +144,43 @@
         const statusMessage = document.getElementById('status-message');
         const retryBtn = document.getElementById('retry-btn');
 
+        let currentProgress = 0;
+        let progressInterval = null;
+
         const statusMap = {
-            'uploaded': { percent: 10, message: 'File uploaded, waiting in queue...' },
-            'extracting_text': { percent: 30, message: 'Extracting text from document...' },
-            'analyzing_openai': { percent: 70, message: 'Analyzing with AI...' },
-            'complete': { percent: 100, message: 'Analysis Complete!' },
-            'error': { percent: 100, message: 'An error occurred.' }
+            'processing': { min: 0, max: 30, message: 'Initializing processing...' },
+            'extracting_text': { min: 30, max: 60, message: 'Extracting text from document...' },
+            'analyzing': { min: 60, max: 95, message: 'Analyzing with AI...' },
+            'completed': { min: 100, max: 100, message: 'Analysis Complete!' },
+            'error': { min: 100, max: 100, message: 'An error occurred.' }
         };
 
+        function startProgressIncrement(min, max) {
+            if (progressInterval) clearInterval(progressInterval);
+            currentProgress = min;
+            updateProgressBar(currentProgress);
+
+            const increment = (max - min) / 100; // Divide into 100 steps for smoothness
+            progressInterval = setInterval(() => {
+                currentProgress += increment;
+                if (currentProgress >= max) {
+                    currentProgress = max;
+                    clearInterval(progressInterval);
+                }
+                updateProgressBar(currentProgress);
+            }, 300); // Adjust speed: smaller interval for faster progress
+        }
+
+        function updateProgressBar(percent) {
+            progressBar.style.width = percent + '%';
+            progressBar.setAttribute('aria-valuenow', percent);
+            progressBar.textContent = Math.round(percent) + '%';
+        }
+
         function updateProgress(status) {
-            const statusInfo = statusMap[status] || { percent: 0, message: `Status: ${status}` };
-            progressBar.style.width = statusInfo.percent + '%';
-            progressBar.setAttribute('aria-valuenow', statusInfo.percent);
-            progressBar.textContent = statusInfo.percent + '%';
+            const statusInfo = statusMap[status] || { min: 0, max: 100, message: `Status: ${status}` };
             statusMessage.textContent = statusInfo.message;
+            startProgressIncrement(statusInfo.min, statusInfo.max);
         }
 
         function pollForStatus() {
@@ -167,22 +189,24 @@
                 .then(data => {
                     updateProgress(data.status);
 
-                    if (data.status === 'complete') {
+                    if (data.status === 'completed') {
+                        clearInterval(progressInterval);
                         loadingContainer.style.display = 'none';
                         analysisContainer.innerHTML = generateAnalysisHtml(data.analysis);
                         analysisContainer.style.display = 'block';
                     } else if (data.status === 'error') {
+                        clearInterval(progressInterval);
                         loadingContainer.style.display = 'none';
                         analysisContainer.innerHTML = generateErrorHtml(data.error_message);
                         analysisContainer.style.display = 'block';
                         retryBtn.style.display = 'inline-block';
                     } else {
-                        // If still processing, poll again after a delay
-                        setTimeout(pollForStatus, 3000);
+                        setTimeout(pollForStatus, 2000); // Poll every 2 seconds
                     }
                 })
                 .catch(error => {
                     console.error('Error polling for status:', error);
+                    clearInterval(progressInterval);
                     analysisContainer.innerHTML = generateErrorHtml('Could not retrieve analysis status.');
                 });
         }
@@ -260,12 +284,10 @@
         if (loadingContainer.style.display !== 'none') {
             pollForStatus();
         } else if (document.getElementById('analysis-content').innerHTML.trim() === '') {
-            // If content is meant to be visible but is empty, populate it
-            // This happens on a direct page load of a completed/errored document
             fetch(pollUrl)
                 .then(r => r.json())
                 .then(data => {
-                    if (data.status === 'complete') {
+                    if (data.status === 'completed') {
                         analysisContainer.innerHTML = generateAnalysisHtml(data.analysis);
                     } else if (data.status === 'error') {
                         analysisContainer.innerHTML = generateErrorHtml(data.error_message);
