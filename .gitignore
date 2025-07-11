@@ -148,3 +148,10 @@ env/
 ENV/
 env.bak/
 venv.bak/ 
+
+# Google Cloud credentials
+*.json
+!*.example.json
+
+# Generated env files
+*_env_vars.txt 

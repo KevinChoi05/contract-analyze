@@ -60,6 +60,49 @@ def create_app():
     
     # Initialize database
     try:
+
+====================
+
+
+Path: /health
+
+Retry window: 5m0s
+
+ 
+
+Attempt #1 failed with service unavailable. Continuing to retry for 4m59s
+
+Attempt #2 failed with service unavailable. Continuing to retry for 4m56s
+
+Attempt #3 failed with service unavailable. Continuing to retry for 4m53s
+
+Attempt #4 failed with service unavailable. Continuing to retry for 4m48s
+
+Attempt #5 failed with service unavailable. Continuing to retry for 4m39s
+
+Attempt #6 failed with service unavailable. Continuing to retry for 4m23s
+
+Attempt #7 failed with service unavailable. Continuing to retry for 3m53s
+
+Attempt #8 failed with service unavailable. Continuing to retry for 3m23s
+
+Attempt #9 failed with service unavailable. Continuing to retry for 2m53s
+
+Attempt #10 failed with service unavailable. Continuing to retry for 2m23s
+
+Attempt #11 failed with service unavailable. Continuing to retry for 1m53s
+
+Attempt #12 failed with service unavailable. Continuing to retry for 1m23s
+
+Attempt #13 failed with service unavailable. Continuing to retry for 53s
+
+Attempt #14 failed with service unavailable. Continuing to retry for 23s
+
+ 
+
+1/1 replicas never became healthy!
+
+Healthcheck failed!
         init_database()
     except Exception as e:
         logger.critical(f"FATAL: Could not initialize database. Application cannot start. Error: {e}")
