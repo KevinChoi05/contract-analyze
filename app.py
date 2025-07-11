@@ -68,13 +68,15 @@ def create_app():
         if platform.system() == "Windows":
              exit(1) # Or handle more gracefully
 
-    # Initialize OCR service (fail-fast)
+    # Initialize OCR service (with fallback support)
     try:
-        get_ocr_service()
+        ocr_service = get_ocr_service()
+        if ocr_service:
+            logger.info("✅ Google Cloud Document AI initialized successfully")
+        else:
+            logger.warning("⚠️ Google Cloud OCR not available, using fallback OCR")
     except Exception as e:
-        logger.critical(f"FATAL: Could not initialize OCR Service. Application cannot start. Error: {e}")
-        if platform.system() == "Windows":
-            exit(1)
+        logger.warning(f"OCR service initialization failed, using fallback: {e}")
 
     # Create Flask app
     app = Flask(__name__)

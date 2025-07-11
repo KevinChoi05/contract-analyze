@@ -213,8 +213,7 @@ _ocr_instance = None
 def get_ocr_service():
     """
     Get the Google Cloud Document AI OCR service.
-    This function will raise an error if the service cannot be initialized,
-    making Google Cloud OCR a hard requirement for the application.
+    Returns None if the service cannot be initialized, allowing fallback OCR.
     """
     global _ocr_instance
     
@@ -223,9 +222,9 @@ def get_ocr_service():
             _ocr_instance = UnifiedOCR()
             logger.info("🚀 Google Cloud Document AI is the configured OCR service.")
         except (EnvironmentError, ConnectionError) as e:
-            logger.critical(f"OCR SERVICE FAILED TO INITIALIZE: {e}")
-            logger.critical("The application cannot process documents without a configured OCR service.")
-            raise  # Re-raise the exception to halt application startup
+            logger.warning(f"Google Cloud OCR not available: {e}")
+            logger.info("📄 Using fallback OCR (PyMuPDF) for document processing.")
+            _ocr_instance = None
     
     return _ocr_instance
 

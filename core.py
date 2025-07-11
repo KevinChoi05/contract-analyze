@@ -1,35 +1,73 @@
+"""
+Core document processing logic
+Handles text extraction, AI analysis, and status management
+"""
 import os
 import re
 import json
 import logging
 import openai
-from cloud_ocr import extract_text_unified
+import time
+from typing import Optional, Dict, Any
+from datetime import datetime
+import fitz  # PyMuPDF for fallback OCR
+from database import get_db_connection
+from cloud_ocr import get_ocr_service, extract_text_unified
 
 logger = logging.getLogger(__name__)
 
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 
-def extract_text_robust(filepath):
+def extract_text_fallback(file_path: str) -> Optional[str]:
     """
-    Unified text extraction using Google Cloud Document AI or fallback
-    This replaces all the complex OCR logic with a single, reliable method
+    Fallback text extraction using PyMuPDF when Google Cloud OCR is not available
     """
-    logger.info(f"Starting unified text extraction for: {filepath}")
-    
     try:
-        # Use unified OCR service
-        text = extract_text_unified(filepath)
-                
-        if text and len(text.strip()) > 10:
-            logger.info(f"✅ Unified OCR extraction successful: {len(text)} characters")
-            return text
+        logger.info(f"Using fallback OCR (PyMuPDF) for: {file_path}")
+        
+        # Open the document
+        doc = fitz.open(file_path)
+        text_content = []
+        
+        # Extract text from each page
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            text = page.get_text()
+            if text.strip():
+                text_content.append(text.strip())
+        
+        doc.close()
+        
+        # Combine all text
+        full_text = '\n\n'.join(text_content)
+        
+        if full_text and len(full_text.strip()) > 10:
+            logger.info(f"✅ Fallback OCR successful: {len(full_text)} characters")
+            return full_text.strip()
         else:
-            logger.warning("Unified OCR extracted minimal or no text")
+            logger.warning("Fallback OCR extracted minimal or no text")
             return None
             
     except Exception as e:
-        logger.error(f"Unified OCR extraction failed: {e}")
+        logger.error(f"Fallback OCR failed: {e}")
         return None
+
+def extract_text_unified(file_path: str) -> Optional[str]:
+    """
+    Unified text extraction with fallback support
+    """
+    # Try Google Cloud OCR first
+    try:
+        ocr_service = get_ocr_service()
+        if ocr_service:
+            text = ocr_service.extract_text(file_path)
+            if text:
+                return text
+    except Exception as e:
+        logger.warning(f"Google Cloud OCR failed, trying fallback: {e}")
+    
+    # Fallback to PyMuPDF
+    return extract_text_fallback(file_path)
 
 def analyze_contract(text_content):
     """Analyzes contract text using DeepSeek and returns structured JSON."""
