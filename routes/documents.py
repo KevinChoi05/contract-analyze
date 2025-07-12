@@ -123,23 +123,77 @@ def document_page(doc_id):
         doc = cursor.fetchone()
         
         if not doc:
+            logger.warning(f"Document {doc_id} not found for user {session.get('user_id')}")
             abort(404)
         
         # Log the document status for debugging
         logger.info(f"Document {doc_id} status: {doc['status']}, has analysis: {bool(doc['analysis'])}")
         
+        # Debug: Print raw analysis data
+        if doc['analysis']:
+            logger.info(f"Raw analysis data for doc {doc_id}: {str(doc['analysis'])[:500]}...")
+        
         # Convert analysis from JSON string to dict if needed
         if doc['analysis'] and isinstance(doc['analysis'], str):
             try:
-                doc['analysis'] = json.loads(doc['analysis'])
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse analysis JSON for document {doc_id}")
+                parsed_analysis = json.loads(doc['analysis'])
+                logger.info(f"Parsed analysis type: {type(parsed_analysis)}, keys: {list(parsed_analysis.keys()) if isinstance(parsed_analysis, dict) else 'not dict'}")
+                doc['analysis'] = parsed_analysis
+            except json.JSONDecodeError as json_error:
+                logger.error(f"Failed to parse analysis JSON for document {doc_id}: {json_error}")
+                logger.error(f"Raw analysis content: {doc['analysis']}")
                 doc['analysis'] = None
+        
+        # Validate analysis structure for template
+        if doc['analysis'] and isinstance(doc['analysis'], dict):
+            # Check if this is an error result
+            if 'error' in doc['analysis']:
+                logger.info(f"Document {doc_id} has error in analysis: {doc['analysis']['error']}")
+            else:
+                # Validate expected fields for successful analysis
+                expected_fields = ['summary', 'clauses']
+                missing_fields = [field for field in expected_fields if field not in doc['analysis']]
+                if missing_fields:
+                    logger.warning(f"Document {doc_id} analysis missing fields: {missing_fields}")
+                
+                # Validate clauses structure if present
+                if 'clauses' in doc['analysis'] and doc['analysis']['clauses']:
+                    if isinstance(doc['analysis']['clauses'], list):
+                        logger.info(f"Document {doc_id} has {len(doc['analysis']['clauses'])} clauses")
+                        # Check first clause structure
+                        if doc['analysis']['clauses']:
+                            first_clause = doc['analysis']['clauses'][0]
+                            logger.info(f"First clause keys: {list(first_clause.keys()) if isinstance(first_clause, dict) else 'not dict'}")
+                    else:
+                        logger.warning(f"Document {doc_id} clauses is not a list: {type(doc['analysis']['clauses'])}")
+        
+        # Attempt to render template with comprehensive error handling
+        try:
+            logger.info(f"Attempting to render template for document {doc_id}")
+            return render_template('document.html', document=doc)
+        except Exception as template_error:
+            logger.error(f"Template rendering failed for document {doc_id}: {template_error}", exc_info=True)
+            logger.error(f"Document data structure: {doc}")
             
-        return render_template('document.html', document=doc)
+            # Try to render with a safe fallback
+            safe_doc = {
+                'id': doc['id'],
+                'filename': doc['filename'],
+                'status': doc['status'],
+                'analysis': None  # Remove problematic analysis data
+            }
+            try:
+                logger.info(f"Attempting fallback render for document {doc_id}")
+                flash('Analysis data could not be displayed properly. Please try refreshing the page.', 'warning')
+                return render_template('document.html', document=safe_doc)
+            except Exception as fallback_error:
+                logger.error(f"Fallback template rendering also failed for document {doc_id}: {fallback_error}", exc_info=True)
+                raise template_error  # Re-raise original error
+            
     except Exception as e:
-        logger.error(f"Error fetching document page for doc_id {doc_id}: {e}")
-        abort(500)
+        logger.error(f"Error fetching document page for doc_id {doc_id}: {e}", exc_info=True)
+        flash('An error occurred while loading the document. Please try again.', 'error')
+        return redirect(url_for('doc.dashboard'))
     finally:
         if conn:
             conn.close()

@@ -389,41 +389,54 @@
                     <h4 class="mb-0"><i class="fas fa-chart-line me-2"></i>Analysis Summary</h4>
                 </div>
                 <div class="card-body">
-                    <p class="lead">{{ document.analysis.summary if document.analysis.summary else 'No summary was generated.' }}</p>
+                    <p class="lead">{{ document.analysis.summary if document.analysis and document.analysis.summary else 'No summary was generated.' }}</p>
                 </div>
             </div>
 
-            {% if document.analysis.clauses %}
+            {% if document.analysis and document.analysis.clauses %}
             <div class="card shadow-sm">
                 <div class="card-header bg-warning text-dark">
                     <h4 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Identified Risk Clauses</h4>
                 </div>
                 <div class="card-body">
                     {% for clause in document.analysis.clauses %}
-                    <div class="card risk-card {{ 'risk-high' if clause.risk_score >= 70 else 'risk-medium' if clause.risk_score >= 40 else 'risk-low' }}">
+                    {% if clause %}
+                    <div class="card risk-card {{ 'risk-high' if (clause.risk_score and clause.risk_score >= 70) else 'risk-medium' if (clause.risk_score and clause.risk_score >= 40) else 'risk-low' }}">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <h6 class="mb-0">{{ clause.type or 'Uncategorized Clause' }}</h6>
-                            <span class="badge bg-{{ 'danger' if clause.risk_score >= 70 else 'warning' if clause.risk_score >= 40 else 'success' }} fs-6">
-                                Risk Score: {{ clause.risk_score or 'N/A' }}
+                            <h6 class="mb-0">{{ clause.type if clause.type else 'Uncategorized Clause' }}</h6>
+                            <span class="badge bg-{{ 'danger' if (clause.risk_score and clause.risk_score >= 70) else 'warning' if (clause.risk_score and clause.risk_score >= 40) else 'success' }} fs-6">
+                                Risk Score: {{ clause.risk_score if clause.risk_score is not none else 'N/A' }}
                             </span>
                         </div>
                         <div class="card-body">
-                            <p><strong>Risk:</strong> {{ clause.clause or 'No description provided.' }}</p>
-                            <p><strong>Consequences:</strong> {{ clause.consequences or 'No consequences listed.' }}</p>
-                            <p><strong>Mitigation:</strong> {{ clause.mitigation or 'No mitigation suggested.' }}</p>
+                            <p><strong>Risk:</strong> {{ clause.clause if clause.clause else clause.risk if clause.risk else 'No description provided.' }}</p>
+                            <p><strong>Consequences:</strong> {{ clause.consequences if clause.consequences else 'No consequences listed.' }}</p>
+                            <p><strong>Mitigation:</strong> {{ clause.mitigation if clause.mitigation else 'No mitigation suggested.' }}</p>
                             {% if clause.exact_text %}
                             <div class="quote">{{ clause.exact_text }}</div>
+                            {% elif clause.quote %}
+                            <div class="quote">{{ clause.quote }}</div>
                             {% endif %}
                         </div>
                     </div>
+                    {% endif %}
                     {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h4 class="mb-0"><i class="fas fa-info-circle me-2"></i>Analysis Complete</h4>
+                </div>
+                <div class="card-body">
+                    <p>No specific risk clauses were identified in this document.</p>
                 </div>
             </div>
             {% endif %}
         {% elif document.status == 'error' %}
             <div class="error-container">
                 <h4><i class="fas fa-times-circle me-2"></i>Analysis Failed</h4>
-                <p>{{ document.analysis.error if document.analysis and document.analysis.error else 'An unknown error occurred during processing.' }}</p>
+                <p>{{ document.analysis.error if (document.analysis and document.analysis.error) else 'An unknown error occurred during processing.' }}</p>
             </div>
         {% endif %}
     </div>
@@ -678,7 +691,5 @@
             alert('Failed to retry analysis. Please try again.');
         });
     }
-</script>
-{% endblock %}
 </script>
 {% endblock %} 
