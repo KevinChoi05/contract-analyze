@@ -28,7 +28,7 @@ COPY . .
 RUN mkdir -p logs uploads flask_session
 
 # Expose port (Railway will set PORT env var)
-EXPOSE $PORT
+EXPOSE 5001
 
-# Use Gunicorn with the WSGI entry point
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --access-logfile - --error-logfile - wsgi:application 
+# Use shell to expand PORT environment variable
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5001} --workers 1 --timeout 120 --access-logfile - --error-logfile - wsgi:application"] 
