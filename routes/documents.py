@@ -321,19 +321,19 @@ def status(doc_id):
             # Enhanced progress mapping with detailed stages
             progress_map = {
                 'processing': {
-                    'progress': 10,
+                    'progress': 15,
                     'stage': 'upload',
-                    'message': 'Reading the file...',
+                    'message': 'Reading and processing the file...',
                     'stage_text': 'Initializing processing'
                 },
                 'extracting_text': {
-                    'progress': 40,
+                    'progress': 45,
                     'stage': 'ocr',
                     'message': 'Extracting text with OCR (fallback activated)...',
                     'stage_text': 'Converting document to text'
                 },
                 'analyzing': {
-                    'progress': 80,
+                    'progress': 85,
                     'stage': 'analysis',
                     'message': 'Analyzing risks with DeepSeek AI...',
                     'stage_text': 'Identifying contract risks'

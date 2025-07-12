@@ -510,7 +510,7 @@
                 stage: 'upload' 
             };
             
-            // Use backend data if available, otherwise use local mapping
+            // ALWAYS prioritize backend data over static mapping
             const progress = (data && data.progress !== undefined) ? data.progress : statusInfo.progress;
             const message = (data && data.message) ? data.message : statusInfo.text;
             const stage = (data && data.stage) ? data.stage : statusInfo.stage;
@@ -519,16 +519,18 @@
             updateProgress(progress);
             updateStageIndicator(stage);
             
-            console.log(`UI Update: ${status} (${progress}%) - ${message} [${stage}]`);
+            console.log(`🔄 UI Update: ${status} (${progress}%) - ${message} [${stage}]`);
             
             if (status === 'completed') {
                 progressSpinner.style.display = 'none';
                 statusIcon.style.background = 'var(--success-color)';
                 statusIcon.style.animation = 'none';
+                console.log('✅ Analysis completed - stopping spinner');
             } else if (status === 'error') {
                 progressSpinner.style.display = 'none';
                 statusIcon.style.background = 'var(--danger-color)';
                 statusIcon.style.animation = 'none';
+                console.log('❌ Analysis failed - stopping spinner');
             }
         }
         
@@ -585,8 +587,12 @@
                             retryBtn.style.display = 'inline-block';
                         }, 1000);
                     } else {
-                        // Continue polling for processing, extracting_text, analyzing statuses
-                        console.log(`Continuing to poll, current status: ${data.status} (${data.progress}%)`);
+                        // Continue polling for ALL intermediate statuses
+                        console.log(`🔄 Continuing to poll, current status: ${data.status} (${data.progress}%)`);
+                        // Ensure we keep polling for ANY status that isn't completed or error
+                        if (data.status !== 'completed' && data.status !== 'error') {
+                            console.log(`⏳ Status ${data.status} is still processing, will poll again`);
+                        }
                     }
                 })
                 .catch(error => {
@@ -670,11 +676,17 @@
         
         // Initialize
         const currentStatus = '{{ document.status }}';
+        console.log(`🚀 Initializing with status: ${currentStatus}`);
+        
         if (currentStatus !== 'completed' && currentStatus !== 'error') {
             updateStatus(currentStatus);
-            pollInterval = setInterval(pollStatus, 3000); // Poll every 3 seconds
+            console.log('🔄 Starting aggressive polling (every 2 seconds)');
+            pollInterval = setInterval(pollStatus, 2000); // Poll every 2 seconds for faster updates
+            // Also poll immediately to get latest status
+            setTimeout(pollStatus, 500);
         } else if (currentStatus === 'completed' && !analysisResults.innerHTML.trim()) {
             // Load completed analysis
+            console.log('📊 Loading completed analysis');
             fetch(statusUrl)
                 .then(r => r.json())
                 .then(data => {
@@ -682,6 +694,7 @@
                         analysisResults.innerHTML = generateAnalysisHtml(data.analysis);
                         analysisResults.style.display = 'block';
                         analysisResults.classList.add('show');
+                        console.log('✅ Completed analysis loaded');
                     }
                 })
                 .catch(error => console.error('Error loading completed analysis:', error));
