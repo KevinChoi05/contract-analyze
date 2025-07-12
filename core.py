@@ -69,6 +69,13 @@ def extract_text_unified(file_path: str) -> Optional[str]:
     # Fallback to PyMuPDF
     return extract_text_fallback(file_path)
 
+def extract_text_robust(file_path: str) -> Optional[str]:
+    """
+    Robust text extraction with multiple fallbacks
+    Alias for extract_text_unified for backward compatibility
+    """
+    return extract_text_unified(file_path)
+
 def analyze_contract(text_content):
     """Analyzes contract text using DeepSeek and returns structured JSON."""
     if not DEEPSEEK_API_KEY:
