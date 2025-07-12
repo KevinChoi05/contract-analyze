@@ -6,7 +6,6 @@ Handles environment setup and graceful startup
 import os
 import sys
 import logging
-import time
 from app import create_app
 
 # Configure logging for Railway
@@ -27,6 +26,7 @@ def main():
         logger.error("PORT environment variable not set by Railway")
         sys.exit(1)
     
+    port = int(port)
     logger.info(f"Starting on port {port}")
     
     # Log environment info (without secrets)
@@ -37,28 +37,23 @@ def main():
     
     try:
         # Create the Flask app
+        logger.info("Creating Flask app...")
         app = create_app()
         logger.info("✅ Flask app created successfully")
         
-        # Import and run with gunicorn programmatically
-        from gunicorn.app.wsgiapp import WSGIApplication
+        # Test the health endpoint
+        with app.test_client() as client:
+            response = client.get('/health')
+            logger.info(f"Health check test: {response.status_code} - {response.get_json()}")
         
-        # Configure gunicorn
-        sys.argv = [
-            'gunicorn',
-            '--bind', f'0.0.0.0:{port}',
-            '--workers', '2',
-            '--timeout', '120',
-            '--preload',
-            '--access-logfile', '-',
-            '--error-logfile', '-',
-            'app:create_app()'
-        ]
-        
-        WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]").run()
+        # Start the server
+        logger.info(f"Starting server on 0.0.0.0:{port}")
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
         
     except Exception as e:
         logger.error(f"Failed to start application: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == '__main__':

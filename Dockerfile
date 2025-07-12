@@ -27,11 +27,8 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p logs uploads flask_session
 
-# Make startup script executable
-RUN chmod +x start_railway.py
-
 # Expose port (Railway will set PORT env var)
 EXPOSE $PORT
 
-# Set the command to run the application using Railway startup script
-CMD ["python", "start_railway.py"] 
+# Use Gunicorn with the WSGI entry point
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --access-logfile - --error-logfile - wsgi:application 
