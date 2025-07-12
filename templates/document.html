@@ -384,54 +384,68 @@
 
     <div id="analysis-results" class="analysis-results" {% if document.status != 'completed' and document.status != 'error' %}style="display: none;"{% endif %}>
         {% if document.status == 'completed' and document.analysis %}
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-primary text-white">
-                    <h4 class="mb-0"><i class="fas fa-chart-line me-2"></i>Analysis Summary</h4>
-                </div>
-                <div class="card-body">
-                    <p class="lead">{{ document.analysis.summary if document.analysis and document.analysis.summary else 'No summary was generated.' }}</p>
-                </div>
-            </div>
-
-            {% if document.analysis and document.analysis.clauses %}
-            <div class="card shadow-sm">
-                <div class="card-header bg-warning text-dark">
-                    <h4 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Identified Risk Clauses</h4>
-                </div>
-                <div class="card-body">
-                    {% for clause in document.analysis.clauses %}
-                    {% if clause %}
-                    <div class="card risk-card {{ 'risk-high' if (clause.risk_score and clause.risk_score >= 70) else 'risk-medium' if (clause.risk_score and clause.risk_score >= 40) else 'risk-low' }}">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h6 class="mb-0">{{ clause.type if clause.type else 'Uncategorized Clause' }}</h6>
-                            <span class="badge bg-{{ 'danger' if (clause.risk_score and clause.risk_score >= 70) else 'warning' if (clause.risk_score and clause.risk_score >= 40) else 'success' }} fs-6">
-                                Risk Score: {{ clause.risk_score if clause.risk_score is not none else 'N/A' }}
-                            </span>
-                        </div>
-                        <div class="card-body">
-                            <p><strong>Risk:</strong> {{ clause.clause if clause.clause else clause.risk if clause.risk else 'No description provided.' }}</p>
-                            <p><strong>Consequences:</strong> {{ clause.consequences if clause.consequences else 'No consequences listed.' }}</p>
-                            <p><strong>Mitigation:</strong> {{ clause.mitigation if clause.mitigation else 'No mitigation suggested.' }}</p>
-                            {% if clause.exact_text %}
-                            <div class="quote">{{ clause.exact_text }}</div>
-                            {% elif clause.quote %}
-                            <div class="quote">{{ clause.quote }}</div>
-                            {% endif %}
-                        </div>
+            {% if document.analysis is mapping %}
+                <!-- Structured analysis (dict) -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0"><i class="fas fa-chart-line me-2"></i>Analysis Summary</h4>
                     </div>
-                    {% endif %}
-                    {% endfor %}
+                    <div class="card-body">
+                        <p class="lead">{{ document.analysis.summary if document.analysis and document.analysis.summary else 'No summary was generated.' }}</p>
+                    </div>
                 </div>
-            </div>
+
+                {% if document.analysis and document.analysis.clauses %}
+                <div class="card shadow-sm">
+                    <div class="card-header bg-warning text-dark">
+                        <h4 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Identified Risk Clauses</h4>
+                    </div>
+                    <div class="card-body">
+                        {% for clause in document.analysis.clauses %}
+                        {% if clause %}
+                        <div class="card risk-card {{ 'risk-high' if (clause.risk_score and clause.risk_score >= 70) else 'risk-medium' if (clause.risk_score and clause.risk_score >= 40) else 'risk-low' }}">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">{{ clause.type if clause.type else 'Uncategorized Clause' }}</h6>
+                                <span class="badge bg-{{ 'danger' if (clause.risk_score and clause.risk_score >= 70) else 'warning' if (clause.risk_score and clause.risk_score >= 40) else 'success' }} fs-6">
+                                    Risk Score: {{ clause.risk_score if clause.risk_score is not none else 'N/A' }}
+                                </span>
+                            </div>
+                            <div class="card-body">
+                                <p><strong>Risk:</strong> {{ clause.clause if clause.clause else clause.risk if clause.risk else 'No description provided.' }}</p>
+                                <p><strong>Consequences:</strong> {{ clause.consequences if clause.consequences else 'No consequences listed.' }}</p>
+                                <p><strong>Mitigation:</strong> {{ clause.mitigation if clause.mitigation else 'No mitigation suggested.' }}</p>
+                                {% if clause.exact_text %}
+                                <div class="quote">{{ clause.exact_text }}</div>
+                                {% elif clause.quote %}
+                                <div class="quote">{{ clause.quote }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <h4 class="mb-0"><i class="fas fa-info-circle me-2"></i>Analysis Complete</h4>
+                    </div>
+                    <div class="card-body">
+                        <p>No specific risk clauses were identified in this document.</p>
+                    </div>
+                </div>
+                {% endif %}
             {% else %}
-            <div class="card shadow-sm">
-                <div class="card-header bg-info text-white">
-                    <h4 class="mb-0"><i class="fas fa-info-circle me-2"></i>Analysis Complete</h4>
+                <!-- Raw analysis (string fallback) -->
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <h4 class="mb-0"><i class="fas fa-file-alt me-2"></i>Analysis Results</h4>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Raw Analysis:</strong></p>
+                        <div class="quote">{{ document.analysis }}</div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <p>No specific risk clauses were identified in this document.</p>
-                </div>
-            </div>
             {% endif %}
         {% elif document.status == 'error' %}
             <div class="error-container">

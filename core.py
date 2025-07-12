@@ -76,6 +76,69 @@ def extract_text_robust(file_path: str) -> Optional[str]:
     """
     return extract_text_unified(file_path)
 
+def extract_summary(content: str) -> str:
+    """Extract summary from DeepSeek response text."""
+    # Look for summary section
+    summary_patterns = [
+        r'Summary:\s*(.+?)(?=\n\n|\nIdentified|$)',
+        r'SUMMARY:\s*(.+?)(?=\n\n|\nIDENTIFIED|$)',
+        r'Executive Summary:\s*(.+?)(?=\n\n|\nRisk|$)',
+        r'Overview:\s*(.+?)(?=\n\n|\nRisk|$)'
+    ]
+    
+    for pattern in summary_patterns:
+        match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    
+    # Fallback: use first paragraph
+    lines = content.split('\n')
+    for line in lines:
+        if line.strip() and len(line.strip()) > 50:
+            return line.strip()
+    
+    return "Contract analysis completed."
+
+def parse_clauses(content: str) -> list:
+    """Parse clauses from DeepSeek response text."""
+    clauses = []
+    
+    # Split by common clause separators
+    clause_sections = re.split(r'\n\s*(?:\d+\.|•|\-|\*)\s*', content)
+    
+    for i, section in enumerate(clause_sections[1:], 1):  # Skip first empty section
+        if len(section.strip()) < 20:
+            continue
+            
+        # Extract clause components
+        clause_data = {
+            'id': i,
+            'type': 'Contract Clause',
+            'risk_score': 50,  # Default medium risk
+            'clause': section.strip()[:200] + '...' if len(section.strip()) > 200 else section.strip(),
+            'consequences': 'Potential business impact requires review.',
+            'mitigation': 'Consult legal counsel for specific guidance.',
+            'exact_text': section.strip()[:300] + '...' if len(section.strip()) > 300 else section.strip()
+        }
+        
+        # Try to extract risk score
+        risk_match = re.search(r'(?:risk|score):\s*(\d+)', section, re.IGNORECASE)
+        if risk_match:
+            clause_data['risk_score'] = int(risk_match.group(1))
+        
+        # Try to extract clause type
+        type_match = re.search(r'(?:type|category):\s*([^\n]+)', section, re.IGNORECASE)
+        if type_match:
+            clause_data['type'] = type_match.group(1).strip()
+        
+        clauses.append(clause_data)
+        
+        # Limit to 10 clauses
+        if len(clauses) >= 10:
+            break
+    
+    return clauses
+
 def analyze_contract(text_content):
     """Analyzes contract text using DeepSeek and returns structured JSON."""
     if not DEEPSEEK_API_KEY:
@@ -129,12 +192,44 @@ JSON RESPONSE FORMAT:
             temperature=0.1
         )
         response_text = response.choices[0].message.content
-        # Extract JSON from markdown code block
+        logger.info(f"🤖 DeepSeek raw response: {response_text[:500]}...")
+        
+        # Try to extract JSON from markdown code block
         match = re.search(r'```json\s*([\s\S]*?)\s*```', response_text)
         if match:
-            return json.loads(match.group(1))
-        else:
-            return json.loads(response_text) # Fallback to parsing the whole string
+            try:
+                parsed_json = json.loads(match.group(1))
+                logger.info(f"✅ Successfully parsed JSON from markdown block")
+                return parsed_json
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse JSON from markdown block, trying string parsing")
+        
+        # Try to parse the whole response as JSON
+        try:
+            parsed_json = json.loads(response_text)
+            logger.info(f"✅ Successfully parsed raw response as JSON")
+            return parsed_json
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse as JSON, falling back to string parsing")
+        
+        # 🚨 FALLBACK: Parse string response into structured dict
+        logger.info(f"🔄 Parsing string response into structured format")
+        summary = extract_summary(response_text)
+        clauses = parse_clauses(response_text)
+        
+        structured_result = {
+            'summary': summary,
+            'clauses': clauses
+        }
+        
+        logger.info(f"✅ String parsing successful: {len(clauses)} clauses extracted")
+        return structured_result
+        
     except Exception as e:
         logger.error(f"Error in analyze_contract: {e}")
-        return {"error": f"Failed to analyze contract: {e}"} 
+        # Return structured error instead of string
+        return {
+            "error": f"Failed to analyze contract: {e}",
+            "summary": "Analysis failed due to technical issues.",
+            "clauses": []
+        } 

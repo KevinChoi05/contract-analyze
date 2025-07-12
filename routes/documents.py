@@ -82,6 +82,22 @@ def analyze_document(doc_id, app_context):
             if analysis_result.get("error"):
                 raise Exception(analysis_result["error"])
             
+            # Ensure analysis_result is a dict
+            if not isinstance(analysis_result, dict):
+                logger.warning(f"🚨 Analysis result is not dict: {type(analysis_result)}")
+                analysis_result = {
+                    'summary': str(analysis_result) if len(str(analysis_result)) < 500 else str(analysis_result)[:500] + '...',
+                    'clauses': []
+                }
+            
+            # Ensure required fields exist
+            if 'summary' not in analysis_result:
+                analysis_result['summary'] = 'Contract analysis completed.'
+            if 'clauses' not in analysis_result:
+                analysis_result['clauses'] = []
+            
+            logger.info(f"✅ Analysis result validated: {type(analysis_result)} with {len(analysis_result.get('clauses', []))} clauses")
+            
             # Finalizing
             update_status('analyzing', {'progress': 95, 'message': 'Finalizing summary...'})
             
@@ -156,7 +172,12 @@ def document_page(doc_id):
             except json.JSONDecodeError as json_error:
                 logger.error(f"Failed to parse analysis JSON for document {doc_id}: {json_error}")
                 logger.error(f"Raw analysis content: {doc['analysis']}")
-                doc['analysis'] = None
+                # 🚨 FALLBACK: Convert string to structured dict
+                logger.info(f"🔄 Converting string analysis to structured format")
+                doc['analysis'] = {
+                    'summary': doc['analysis'] if len(doc['analysis']) < 500 else doc['analysis'][:500] + '...',
+                    'clauses': []
+                }
         
         # Validate analysis structure for template
         if doc['analysis'] and isinstance(doc['analysis'], dict):
