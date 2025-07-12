@@ -7,6 +7,11 @@ This script helps deploy the application to Railway.
 import os
 import subprocess
 import json
+import sys
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 def create_railway_json():
     """Create railway.json configuration"""
@@ -26,107 +31,108 @@ def create_railway_json():
     
     with open('railway.json', 'w') as f:
         json.dump(config, f, indent=2)
-    print("✅ Created railway.json")
+    logger.info("✅ Created railway.json")
 
 def create_nixpacks_toml():
     """Create nixpacks.toml for Railway"""
-    config = """[phases.setup]
-nixPkgs = ["tesseract", "poppler_utils"]
-
-[phases.install]
+    config = """[phases.install]
 cmds = ["pip install -r requirements.txt"]
-
-[phases.build]
-cmds = ["echo 'Build completed'"]
 
 [start]
 cmd = "gunicorn app:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120"
 """
     
     with open('nixpacks.toml', 'w') as f:
-        f.write(config)
-    print("✅ Created nixpacks.toml")
+        f.write(config.strip())
+    logger.info("✅ Created nixpacks.toml")
+
+def check_railway_cli():
+    """Check if Railway CLI is installed"""
+    try:
+        result = subprocess.run(['railway', '--version'], capture_output=True, text=True, check=True)
+        logger.info(f"✅ Railway CLI version: {result.stdout.strip()}")
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.error("❌ Railway CLI not found. Install it with: npm install -g @railway/cli")
+        return False
 
 def deploy_to_railway():
     """Deploy to Railway"""
-    print("🚀 Deploying to Railway...")
-    
-    # Check if Railway CLI is installed
-    try:
-        subprocess.run(['railway', '--version'], check=True, capture_output=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("❌ Railway CLI not found. Please install it first:")
-        print("   npm install -g @railway/cli")
+    if not check_railway_cli():
         return False
     
-    # Login to Railway
     try:
+        # Login (interactive)
         subprocess.run(['railway', 'login'], check=True)
-        print("✅ Logged in to Railway")
+        logger.info("✅ Logged in to Railway")
     except subprocess.CalledProcessError:
-        print("❌ Railway login failed")
+        logger.error("❌ Railway login failed")
         return False
     
-    # Initialize Railway project
     try:
+        # Init project if not exists
         subprocess.run(['railway', 'init'], check=True)
-        print("✅ Railway project initialized")
+        logger.info("✅ Railway project initialized")
     except subprocess.CalledProcessError:
-        print("⚠️ Railway project initialization failed (might already exist)")
+        logger.warning("⚠️ Project might already exist. Continuing...")
     
     # Set environment variables
     env_vars = {
         'FLASK_ENV': 'production',
-        'OFFLINE_MODE': 'False'
+        'OFFLINE_MODE': 'False',
+        # Add project-specific vars with default or empty
+        'SECRET_KEY': os.getenv('SECRET_KEY', 'generate_a_secure_key'),
+        'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
+        'DEEPSEEK_API_KEY': os.getenv('DEEPSEEK_API_KEY', ''),
+        'GOOGLE_CLOUD_PROJECT_ID': os.getenv('GOOGLE_CLOUD_PROJECT_ID', ''),
+        'DOCUMENT_AI_PROCESSOR_ID': os.getenv('DOCUMENT_AI_PROCESSOR_ID', ''),
+        'GOOGLE_APPLICATION_CREDENTIALS_JSON': os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON', '')
     }
     
     for key, value in env_vars.items():
-        try:
-            subprocess.run(['railway', 'variables', 'set', f'{key}={value}'], check=True)
-            print(f"✅ Set {key}={value}")
-        except subprocess.CalledProcessError:
-            print(f"⚠️ Failed to set {key}")
+        if value:  # Only set if value present
+            try:
+                subprocess.run(['railway', 'variables', 'set', f'{key}={value}'], check=True)
+                logger.info(f"✅ Set {key}")
+            except subprocess.CalledProcessError:
+                logger.warning(f"⚠️ Failed to set {key}")
+        else:
+            logger.info(f"ℹ️ {key} not set (provide via env or dashboard)")
     
-    # Deploy
+    # Deploy using 'railway up' (updated CLI command)
     try:
-        subprocess.run(['railway', 'deploy'], check=True)
-        print("✅ Deployed to Railway")
+        subprocess.run(['railway', 'up'], check=True)
+        logger.info("✅ Deployed to Railway")
         
-        # Get the URL
-        result = subprocess.run(['railway', 'domain'], check=True, capture_output=True, text=True)
+        # Get domain
+        result = subprocess.run(['railway', 'domain'], capture_output=True, text=True, check=True)
         domain = result.stdout.strip()
         if domain:
-            print(f"🌐 Your app is available at: https://{domain}")
+            logger.info(f"🌐 App available at: https://{domain}")
         
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ Deployment failed: {e}")
+        logger.error(f"❌ Deployment failed: {e}")
         return False
 
 def main():
     """Main deployment function"""
-    print("🎯 Railway Deployment Setup")
-    print("=" * 40)
+    logger.info("🎯 Railway Deployment Setup")
+    logger.info("=" * 40)
     
-    # Create necessary files
+    # Create config files
     create_railway_json()
     create_nixpacks_toml()
     
-    print("\n📋 Next steps:")
-    print("1. Install Railway CLI: npm install -g @railway/cli")
-    print("2. Set your API keys in Railway dashboard:")
-    print("   - OPENAI_API_KEY")
-    print("   - DEEPSEEK_API_KEY")
-    print("   - SECRET_KEY")
-    print("3. Deploy: python deploy_railway.py --deploy")
-    print("4. Or deploy manually:")
-    print("   railway login")
-    print("   railway init")
-    print("   railway deploy")
+    logger.info("\n📋 Next steps:")
+    logger.info("1. Ensure Railway CLI is installed: npm install -g @railway/cli")
+    logger.info("2. Set sensitive API keys in Railway dashboard or local env")
+    logger.info("3. For database, add a PostgreSQL service via 'railway add'")
+    logger.info("4. Deploy with: python deploy_railway.py --deploy")
+    logger.info("   Or manually: railway login && railway init && railway up")
     
-    # Check if --deploy flag is provided
-    if '--deploy' in os.sys.argv:
+    if '--deploy' in sys.argv:
         deploy_to_railway()
 
 if __name__ == "__main__":
-    main() 
+    main()

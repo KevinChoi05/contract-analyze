@@ -7,12 +7,10 @@ import re
 import json
 import logging
 import openai
-import time
 from typing import Optional, Dict, Any
-from datetime import datetime
 import fitz  # PyMuPDF for fallback OCR
 from database import get_db_connection
-from cloud_ocr import get_ocr_service, extract_text_unified
+from cloud_ocr import get_ocr_service, extract_text_unified as cloud_extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -24,30 +22,18 @@ def extract_text_fallback(file_path: str) -> Optional[str]:
     """
     try:
         logger.info(f"Using fallback OCR (PyMuPDF) for: {file_path}")
-        
-        # Open the document
-        doc = fitz.open(file_path)
-        text_content = []
-        
-        # Extract text from each page
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            text = page.get_text()
-            if text.strip():
-                text_content.append(text.strip())
-        
-        doc.close()
-        
-        # Combine all text
-        full_text = '\n\n'.join(text_content)
-        
-        if full_text and len(full_text.strip()) > 10:
+        with fitz.open(file_path) as doc:
+            text_content = []
+            for page in doc:
+                text = page.get_text().strip()
+                if text:
+                    text_content.append(text)
+        full_text = '\n\n'.join(text_content).strip()
+        if len(full_text) > 10:
             logger.info(f"✅ Fallback OCR successful: {len(full_text)} characters")
-            return full_text.strip()
-        else:
-            logger.warning("Fallback OCR extracted minimal or no text")
-            return None
-            
+            return full_text
+        logger.warning("Fallback OCR extracted minimal or no text")
+        return None
     except Exception as e:
         logger.error(f"Fallback OCR failed: {e}")
         return None
@@ -56,107 +42,68 @@ def extract_text_unified(file_path: str) -> Optional[str]:
     """
     Unified text extraction with fallback support
     """
-    # Try Google Cloud OCR first
-    try:
-        ocr_service = get_ocr_service()
-        if ocr_service:
-            text = ocr_service.extract_text(file_path)
-            if text:
-                return text
-    except Exception as e:
-        logger.warning(f"Google Cloud OCR failed, trying fallback: {e}")
-    
-    # Fallback to PyMuPDF
+    ocr_service = get_ocr_service()
+    if ocr_service:
+        text = cloud_extract_text(file_path)
+        if text:
+            return text
     return extract_text_fallback(file_path)
-
-def extract_text_robust(file_path: str) -> Optional[str]:
-    """
-    Robust text extraction with multiple fallbacks
-    Alias for extract_text_unified for backward compatibility
-    """
-    return extract_text_unified(file_path)
 
 def extract_summary(content: str) -> str:
     """Extract summary from DeepSeek response text."""
-    # Look for summary section
-    summary_patterns = [
-        r'Summary:\s*(.+?)(?=\n\n|\nIdentified|$)',
-        r'SUMMARY:\s*(.+?)(?=\n\n|\nIDENTIFIED|$)',
-        r'Executive Summary:\s*(.+?)(?=\n\n|\nRisk|$)',
-        r'Overview:\s*(.+?)(?=\n\n|\nRisk|$)'
+    patterns = [
+        r'(?:Summary|SUMMARY|Executive Summary|Overview):\s*(.+?)(?=\n\n|\n(?:Identified|Risk)|$)'
     ]
-    
-    for pattern in summary_patterns:
+    for pattern in patterns:
         match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
         if match:
             return match.group(1).strip()
-    
-    # Fallback: use first paragraph
-    lines = content.split('\n')
-    for line in lines:
-        if line.strip() and len(line.strip()) > 50:
-            return line.strip()
-    
-    return "Contract analysis completed."
+    lines = [line.strip() for line in content.split('\n') if len(line.strip()) > 50]
+    return lines[0] if lines else "Contract analysis completed."
 
 def parse_clauses(content: str) -> list:
     """Parse clauses from DeepSeek response text."""
     clauses = []
-    
-    # Split by common clause separators
-    clause_sections = re.split(r'\n\s*(?:\d+\.|•|\-|\*)\s*', content)
-    
-    for i, section in enumerate(clause_sections[1:], 1):  # Skip first empty section
-        if len(section.strip()) < 20:
+    sections = re.split(r'\n\s*(?:\d+\.|•|\-|\*)\s*', content)
+    for i, section in enumerate(sections[1:], 1):  # Skip first
+        section = section.strip()
+        if len(section) < 20:
             continue
-            
-        # Extract clause components
         clause_data = {
             'id': i,
             'type': 'Contract Clause',
-            'risk_score': 50,  # Default medium risk
-            'clause': section.strip()[:200] + '...' if len(section.strip()) > 200 else section.strip(),
+            'risk_score': 50,
+            'clause': section[:200] + '...' if len(section) > 200 else section,
             'consequences': 'Potential business impact requires review.',
             'mitigation': 'Consult legal counsel for specific guidance.',
-            'exact_text': section.strip()[:300] + '...' if len(section.strip()) > 300 else section.strip()
+            'exact_text': section[:300] + '...' if len(section) > 300 else section
         }
-        
-        # Try to extract risk score
         risk_match = re.search(r'(?:risk|score):\s*(\d+)', section, re.IGNORECASE)
         if risk_match:
             clause_data['risk_score'] = int(risk_match.group(1))
-        
-        # Try to extract clause type
         type_match = re.search(r'(?:type|category):\s*([^\n]+)', section, re.IGNORECASE)
         if type_match:
             clause_data['type'] = type_match.group(1).strip()
-        
         clauses.append(clause_data)
-        
-        # Limit to 10 clauses
         if len(clauses) >= 10:
             break
-    
     return clauses
 
-def analyze_contract(text_content, doc_id=None):
+def analyze_contract(text_content: str, doc_id: Optional[str] = None) -> Dict[str, Any]:
     """Analyzes contract text using DeepSeek and returns structured JSON."""
-    # Import debug utilities
     try:
-        from debug_utils import debug_full_pipeline, debug_deepseek_response, debug_json_parsing, debug_string_parsing, debug_analysis_result, debug_error
+        from debug_utils import (
+            debug_full_pipeline, debug_deepseek_response, debug_json_parsing,
+            debug_string_parsing, debug_analysis_result, debug_error
+        )
     except ImportError:
-        # Fallback if debug_utils not available
-        def debug_full_pipeline(*args, **kwargs): pass
-        def debug_deepseek_response(*args, **kwargs): pass
-        def debug_json_parsing(*args, **kwargs): pass
-        def debug_string_parsing(*args, **kwargs): pass
-        def debug_analysis_result(*args, **kwargs): pass
-        def debug_error(*args, **kwargs): pass
+        debug_full_pipeline = debug_deepseek_response = debug_json_parsing = \
+        debug_string_parsing = debug_analysis_result = debug_error = lambda *args, **kwargs: None
     
     debug_full_pipeline(doc_id, "analyze_contract_start", f"Text length: {len(text_content)}")
     
     if not DEEPSEEK_API_KEY:
-        error_result = {"error": "DeepSeek API Key not configured."}
+        error_result = {"error": "DeepSeek API Key not configured.", "summary": "", "clauses": []}
         debug_analysis_result(error_result, doc_id)
         return error_result
     
@@ -198,74 +145,54 @@ JSON RESPONSE FORMAT:
     
     try:
         debug_full_pipeline(doc_id, "deepseek_api_call")
-        
         client = openai.OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
-                ],
+            ],
             max_tokens=4096,
             temperature=0.1
         )
-        response_text = response.choices[0].message.content
+        response_text = response.choices[0].message.content.strip()
         logger.info(f"🤖 DeepSeek raw response: {response_text[:500]}...")
-        
-        # 🔍 DEBUG: Analyze DeepSeek response
         debug_deepseek_response(response_text, doc_id)
         
-        # Try to extract JSON from markdown code block
+        # Attempt JSON parsing
         debug_full_pipeline(doc_id, "json_parsing_attempt")
         debug_json_parsing(response_text, doc_id)
         
+        # Extract from markdown if present
         match = re.search(r'```json\s*([\s\S]*?)\s*```', response_text)
-        if match:
-            try:
-                parsed_json = json.loads(match.group(1))
-                logger.info(f"✅ Successfully parsed JSON from markdown block")
-                debug_analysis_result(parsed_json, doc_id)
-                return parsed_json
-            except json.JSONDecodeError as e:
-                logger.warning("Failed to parse JSON from markdown block, trying string parsing")
-                debug_error(e, "markdown_json_parsing", doc_id)
+        json_str = match.group(1) if match else response_text
         
-        # Try to parse the whole response as JSON
         try:
-            parsed_json = json.loads(response_text)
-            logger.info(f"✅ Successfully parsed raw response as JSON")
+            parsed_json = json.loads(json_str)
+            logger.info("✅ Parsed JSON successfully")
             debug_analysis_result(parsed_json, doc_id)
             return parsed_json
         except json.JSONDecodeError as e:
-            logger.warning("Failed to parse as JSON, falling back to string parsing")
-            debug_error(e, "raw_json_parsing", doc_id)
+            logger.warning("JSON parsing failed, using string fallback")
+            debug_error(e, "json_parsing", doc_id)
         
-        # 🚨 FALLBACK: Parse string response into structured dict
+        # String parsing fallback
         debug_full_pipeline(doc_id, "string_parsing_fallback")
         debug_string_parsing(response_text, doc_id)
-        
-        logger.info(f"🔄 Parsing string response into structured format")
         summary = extract_summary(response_text)
         clauses = parse_clauses(response_text)
-        
-        structured_result = {
-            'summary': summary,
-            'clauses': clauses
-        }
-        
-        logger.info(f"✅ String parsing successful: {len(clauses)} clauses extracted")
-        debug_analysis_result(structured_result, doc_id)
-        return structured_result
-        
+        result = {'summary': summary, 'clauses': clauses}
+        logger.info(f"✅ String parsing: {len(clauses)} clauses")
+        debug_analysis_result(result, doc_id)
+        return result
+    
     except Exception as e:
         logger.error(f"Error in analyze_contract: {e}")
         debug_error(e, "analyze_contract", doc_id)
-        
-        # Return structured error instead of string
         error_result = {
-            "error": f"Failed to analyze contract: {e}",
+            "error": f"Failed to analyze contract: {str(e)}",
             "summary": "Analysis failed due to technical issues.",
             "clauses": []
         }
         debug_analysis_result(error_result, doc_id)
-        return error_result 
+        return error_result

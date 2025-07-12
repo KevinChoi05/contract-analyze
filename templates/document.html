@@ -3,350 +3,352 @@
 {% block title %}Analysis - {{ document.filename }}{% endblock %}
 
 {% block extra_css %}
+
 <style>
-    :root {
-        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        --progress-gradient: linear-gradient(90deg, #4e73df 0%, #36b9cc 100%);
-        --success-color: #28a745;
-        --warning-color: #ffc107;
-        --danger-color: #dc3545;
-        --shadow-light: 0 4px 15px rgba(0,0,0,0.1);
-        --shadow-medium: 0 8px 25px rgba(0,0,0,0.15);
-        --border-radius: 12px;
-    }
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --progress-gradient: linear-gradient(90deg, #4e73df 0%, #36b9cc 100%);
+    --success-color: #28a745;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --shadow-light: 0 4px 15px rgba(0,0,0,0.1);
+    --shadow-medium: 0 8px 25px rgba(0,0,0,0.15);
+    --border-radius: 12px;
+}
 
+.document-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.document-header {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-light);
+    border: 1px solid #e3e6f0;
+}
+
+.progress-container {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 2.5rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-light);
+    border: 1px solid #e3e6f0;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--primary-gradient);
+    opacity: 0.1;
+}
+
+.progress-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.progress-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #e3e6f0;
+    border-top: 3px solid #4e73df;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.progress-bar-container {
+    position: relative;
+    height: 20px;
+    background: #f8f9fc;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: var(--progress-gradient);
+    border-radius: 10px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, transparent 33%, rgba(255,255,255,0.3) 33%, rgba(255,255,255,0.3) 66%, transparent 66%);
+    background-size: 20px 20px;
+    animation: progress-stripes 1s linear infinite;
+}
+
+@keyframes progress-stripes {
+    0% { background-position: 0 0; }
+    100% { background-position: 20px 0; }
+}
+
+.progress-percentage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #2d3748;
+    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+}
+
+.progress-status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.status-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--progress-gradient);
+    position: relative;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.status-text {
+    font-size: 1.1rem;
+    color: #4a5568;
+    font-weight: 500;
+}
+
+.stage-indicator {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+
+.stage-step {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    background: #f8f9fc;
+    border: 1px solid #e3e6f0;
+    transition: all 0.3s ease;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.stage-step.active {
+    background: var(--progress-gradient);
+    color: white;
+    border-color: transparent;
+    box-shadow: var(--shadow-light);
+}
+
+.stage-step.completed {
+    background: var(--success-color);
+    color: white;
+    border-color: transparent;
+}
+
+.stage-step.error {
+    background: var(--danger-color);
+    color: white;
+    border-color: transparent;
+}
+
+.stage-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.7;
+}
+
+.analysis-results {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    box-shadow: var(--shadow-light);
+    border: 1px solid #e3e6f0;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.5s ease;
+}
+
+.analysis-results.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.risk-card {
+    border-left-width: 5px;
+    transition: all 0.3s ease;
+    margin-bottom: 1.5rem;
+}
+
+.risk-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-medium);
+}
+
+.risk-high {
+    border-left-color: var(--danger-color);
+}
+
+.risk-medium {
+    border-left-color: var(--warning-color);
+}
+
+.risk-low {
+    border-left-color: var(--success-color);
+}
+
+.quote {
+    background: linear-gradient(135deg, #f8f9fc 0%, #f1f3f8 100%);
+    padding: 1.5rem;
+    border-radius: var(--border-radius);
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: 2px solid #e3e6f0;
+    position: relative;
+    margin-top: 1rem;
+}
+
+.quote::before {
+    content: '"';
+    position: absolute;
+    top: -10px;
+    left: 15px;
+    font-size: 3rem;
+    color: #4e73df;
+    background: white;
+    padding: 0 10px;
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    color: #4e73df;
+    text-decoration: none;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    background: rgba(78, 115, 223, 0.1);
+}
+
+.back-link:hover {
+    background: rgba(78, 115, 223, 0.2);
+    color: #2653d3;
+    transform: translateX(-3px);
+}
+
+.error-container {
+    background: #fff5f5;
+    border: 1px solid #fed7d7;
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    text-align: center;
+    color: #c53030;
+}
+
+.success-animation {
+    animation: successPulse 0.6s ease-out;
+}
+
+@keyframes successPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
     .document-container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
+        padding: 15px;
     }
-
-    .document-header {
-        background: white;
-        border-radius: var(--border-radius);
-        padding: 2rem;
-        margin-bottom: 2rem;
-        box-shadow: var(--shadow-light);
-        border: 1px solid #e3e6f0;
-    }
-
-    .progress-container {
-        background: white;
-        border-radius: var(--border-radius);
-        padding: 2.5rem;
-        margin-bottom: 2rem;
-        box-shadow: var(--shadow-light);
-        border: 1px solid #e3e6f0;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .progress-container::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: var(--primary-gradient);
-        opacity: 0.1;
-    }
-
-    .progress-title {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #2d3748;
-        margin-bottom: 1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .progress-spinner {
-        width: 24px;
-        height: 24px;
-        border: 3px solid #e3e6f0;
-        border-top: 3px solid #4e73df;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-
-    .progress-bar-container {
-        position: relative;
-        height: 20px;
-        background: #f8f9fc;
-        border-radius: 10px;
-        overflow: hidden;
-        margin-bottom: 1.5rem;
-        box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-    }
-
-    .progress-bar-fill {
-        height: 100%;
-        background: var(--progress-gradient);
-        border-radius: 10px;
-        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        overflow: hidden;
-    }
-
-    .progress-bar-fill::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(45deg, transparent 33%, rgba(255,255,255,0.3) 33%, rgba(255,255,255,0.3) 66%, transparent 66%);
-        background-size: 20px 20px;
-        animation: progress-stripes 1s linear infinite;
-    }
-
-    @keyframes progress-stripes {
-        0% { background-position: 0 0; }
-        100% { background-position: 20px 0; }
-    }
-
-    .progress-percentage {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: #2d3748;
-        text-shadow: 0 1px 2px rgba(255,255,255,0.8);
-    }
-
-    .progress-status {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        margin-bottom: 1rem;
-    }
-
-    .status-icon {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--progress-gradient);
-        position: relative;
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
-
-    .status-text {
-        font-size: 1.1rem;
-        color: #4a5568;
-        font-weight: 500;
-    }
-
-    .stage-indicator {
-        display: flex;
-        gap: 1rem;
-        margin-top: 1rem;
-        flex-wrap: wrap;
-    }
-
-    .stage-step {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        background: #f8f9fc;
-        border: 1px solid #e3e6f0;
-        transition: all 0.3s ease;
-        font-size: 0.875rem;
-        font-weight: 500;
-    }
-
-    .stage-step.active {
-        background: var(--progress-gradient);
-        color: white;
-        border-color: transparent;
-        box-shadow: var(--shadow-light);
-    }
-
-    .stage-step.completed {
-        background: var(--success-color);
-        color: white;
-        border-color: transparent;
-    }
-
-    .stage-step.error {
-        background: var(--danger-color);
-        color: white;
-        border-color: transparent;
-    }
-
-    .stage-icon {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: currentColor;
-        opacity: 0.7;
-    }
-
+    
+    .document-header,
+    .progress-container,
     .analysis-results {
-        background: white;
-        border-radius: var(--border-radius);
-        padding: 2rem;
-        box-shadow: var(--shadow-light);
-        border: 1px solid #e3e6f0;
-        opacity: 0;
-        transform: translateY(20px);
-        transition: all 0.5s ease;
-    }
-
-    .analysis-results.show {
-        opacity: 1;
-        transform: translateY(0);
-    }
-
-    .risk-card {
-        border-left-width: 5px;
-        transition: all 0.3s ease;
-        margin-bottom: 1.5rem;
-    }
-
-    .risk-card:hover {
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-medium);
-    }
-
-    .risk-high { border-left-color: var(--danger-color); }
-    .risk-medium { border-left-color: var(--warning-color); }
-    .risk-low { border-left-color: var(--success-color); }
-
-    .quote {
-        background: linear-gradient(135deg, #f8f9fc 0%, #f1f3f8 100%);
         padding: 1.5rem;
-        border-radius: var(--border-radius);
-        font-family: 'Courier New', monospace;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        border: 2px solid #e3e6f0;
-        position: relative;
-        margin-top: 1rem;
     }
-
-    .quote::before {
-        content: '"';
-        position: absolute;
-        top: -10px;
-        left: 15px;
-        font-size: 3rem;
-        color: #4e73df;
-        background: white;
-        padding: 0 10px;
+    
+    .stage-indicator {
+        gap: 0.5rem;
     }
-
-    .back-link {
-        display: inline-flex;
-        align-items: center;
-        color: #4e73df;
-        text-decoration: none;
-        font-weight: 600;
-        padding: 8px 16px;
-        border-radius: 8px;
-        transition: all 0.3s ease;
-        background: rgba(78, 115, 223, 0.1);
+    
+    .stage-step {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.75rem;
     }
-
-    .back-link:hover {
-        background: rgba(78, 115, 223, 0.2);
-        color: #2653d3;
-        transform: translateX(-3px);
+    
+    .progress-title {
+        font-size: 1.25rem;
     }
-
-    .error-container {
-        background: #fff5f5;
-        border: 1px solid #fed7d7;
-        border-radius: var(--border-radius);
-        padding: 2rem;
-        text-align: center;
-        color: #c53030;
-    }
-
-    .success-animation {
-        animation: successPulse 0.6s ease-out;
-    }
-
-    @keyframes successPulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-        100% { transform: scale(1); }
-    }
-
-    /* Responsive Design */
-    @media (max-width: 768px) {
-        .document-container {
-            padding: 15px;
-        }
-        
-        .document-header,
-        .progress-container,
-        .analysis-results {
-            padding: 1.5rem;
-        }
-        
-        .stage-indicator {
-            gap: 0.5rem;
-        }
-        
-        .stage-step {
-            font-size: 0.75rem;
-            padding: 0.25rem 0.75rem;
-        }
-        
-        .progress-title {
-            font-size: 1.25rem;
-        }
-    }
+}
 </style>
 {% endblock %}
 
 {% block content %}
+
 <div class="document-container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <a href="{{ url_for('doc.dashboard') }}" class="back-link">
-            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
-        </a>
-        <div class="d-flex gap-2">
-            <button class="btn btn-info" id="retry-btn" style="display: none;" onclick="retryAnalysis()">
-                <i class="fas fa-redo me-2"></i>Retry Analysis
-            </button>
-            <a href="{{ url_for('doc.delete_document', doc_id=document.id) }}" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this document?');">
-                <i class="fas fa-trash me-2"></i>Delete
-            </a>
-        </div>
-    </div>
-
     <div class="document-header">
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <a href="{{ url_for('doc.dashboard') }}" class="back-link">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
             <div>
-                <h2 class="mb-1 fw-bold">{{ document.filename }}</h2>
-                <p class="text-muted mb-0">Contract Analysis Report</p>
-            </div>
-            <div class="text-end">
-                <div class="bg-primary bg-gradient rounded-3 p-3 d-inline-flex">
-                    <i class="fas fa-file-contract text-white fa-2x"></i>
-                </div>
+                <button class="btn btn-info" id="retry-btn" style="display: none;" onclick="retryAnalysis()">
+                    <i class="fas fa-redo me-2"></i>Retry Analysis
+                </button>
+                <form method="POST" action="{{ url_for('doc.delete_document', doc_id=document.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this document?');">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-2"></i>Delete
+                    </button>
+                </form>
             </div>
         </div>
+        <h1 class="h3 mb-0">{{ document.filename }}</h1>
+        <p class="text-muted mb-0">Contract Analysis Report</p>
     </div>
 
-    <div id="progress-container" class="progress-container" {% if document.status == 'completed' or document.status == 'error' %}style="display: none;"{% endif %}>
+    <div id="progress-container" class="progress-container">
         <div class="progress-title">
             <div class="progress-spinner" id="progress-spinner"></div>
             Analyzing Your Document
@@ -363,29 +365,28 @@
         </div>
         
         <div class="stage-indicator">
-            <div class="stage-step" id="stage-upload">
+            <div class="stage-step active" id="stage-upload">
                 <div class="stage-icon"></div>
-                <span>Upload</span>
+                Upload
             </div>
             <div class="stage-step" id="stage-ocr">
                 <div class="stage-icon"></div>
-                <span>OCR</span>
+                OCR
             </div>
             <div class="stage-step" id="stage-analysis">
                 <div class="stage-icon"></div>
-                <span>AI Analysis</span>
+                AI Analysis
             </div>
             <div class="stage-step" id="stage-complete">
                 <div class="stage-icon"></div>
-                <span>Complete</span>
+                Complete
             </div>
         </div>
     </div>
 
-    <div id="analysis-results" class="analysis-results" {% if document.status != 'completed' and document.status != 'error' %}style="display: none;"{% endif %}>
+    <div id="analysis-results" class="analysis-results" style="display: none;">
         {% if document.status == 'completed' and document.analysis %}
             {% if document.analysis is mapping %}
-                <!-- Structured analysis (dict) -->
                 <div class="card shadow-sm mb-4">
                     <div class="card-header bg-primary text-white">
                         <h4 class="mb-0"><i class="fas fa-chart-line me-2"></i>Analysis Summary</h4>
@@ -402,44 +403,43 @@
                     </div>
                     <div class="card-body">
                         {% for clause in document.analysis.clauses %}
-                        {% if clause %}
-                        <div class="card risk-card {{ 'risk-high' if (clause.risk_score and clause.risk_score >= 70) else 'risk-medium' if (clause.risk_score and clause.risk_score >= 40) else 'risk-low' }}">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <h6 class="mb-0">{{ clause.type if clause.type else 'Uncategorized Clause' }}</h6>
-                                <span class="badge bg-{{ 'danger' if (clause.risk_score and clause.risk_score >= 70) else 'warning' if (clause.risk_score and clause.risk_score >= 40) else 'success' }} fs-6">
-                                    Risk Score: {{ clause.risk_score if clause.risk_score is not none else 'N/A' }}
-                                </span>
-                            </div>
-                            <div class="card-body">
-                                <p><strong>Risk:</strong> {{ clause.clause if clause.clause else clause.risk if clause.risk else 'No description provided.' }}</p>
-                                <p><strong>Consequences:</strong> {{ clause.consequences if clause.consequences else 'No consequences listed.' }}</p>
-                                <p><strong>Mitigation:</strong> {{ clause.mitigation if clause.mitigation else 'No mitigation suggested.' }}</p>
-                                {% if clause.exact_text %}
-                                <div class="quote">{{ clause.exact_text }}</div>
-                                {% elif clause.quote %}
-                                <div class="quote">{{ clause.quote }}</div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endif %}
+                            {% if clause %}
+                                <div class="card risk-card {% if clause.risk_score >= 70 %}risk-high{% elif clause.risk_score >= 40 %}risk-medium{% else %}risk-low{% endif %}">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0">{{ clause.type if clause.type else 'Uncategorized Clause' }}</h6>
+                                        <span class="badge bg-{% if clause.risk_score >= 70 %}danger{% elif clause.risk_score >= 40 %}warning{% else %}success{% endif %} fs-6">
+                                            Risk Score: {{ clause.risk_score if clause.risk_score is not none else 'N/A' }}
+                                        </span>
+                                    </div>
+                                    <div class="card-body">
+                                        <p><strong>Risk:</strong> {{ clause.clause if clause.clause else clause.risk if clause.risk else 'No description provided.' }}</p>
+                                        <p><strong>Consequences:</strong> {{ clause.consequences if clause.consequences else 'No consequences listed.' }}</p>
+                                        <p><strong>Mitigation:</strong> {{ clause.mitigation if clause.mitigation else 'No mitigation suggested.' }}</p>
+                                        {% if clause.exact_text %}
+                                            <div class="quote">{{ clause.exact_text }}</div>
+                                        {% elif clause.quote %}
+                                            <div class="quote">{{ clause.quote }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endif %}
                         {% endfor %}
                     </div>
                 </div>
                 {% else %}
-                <div class="card shadow-sm">
-                    <div class="card-header bg-info text-white">
-                        <h4 class="mb-0"><i class="fas fa-info-circle me-2"></i>Analysis Complete</h4>
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-success text-white">
+                            <h4 class="mb-0"><i class="fas fa-check-circle me-2"></i>Analysis Complete</h4>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-0">No specific risk clauses were identified in this document.</p>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <p>No specific risk clauses were identified in this document.</p>
-                    </div>
-                </div>
                 {% endif %}
             {% else %}
-                <!-- Raw analysis (string fallback) -->
                 <div class="card shadow-sm">
                     <div class="card-header bg-info text-white">
-                        <h4 class="mb-0"><i class="fas fa-file-alt me-2"></i>Analysis Results</h4>
+                        <h4 class="mb-0"><i class="fas fa-info-circle me-2"></i>Analysis Results</h4>
                     </div>
                     <div class="card-body">
                         <p><strong>Raw Analysis:</strong></p>
@@ -455,6 +455,7 @@
         {% endif %}
     </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -484,31 +485,11 @@
         
         // Progress mapping - SYNCED WITH BACKEND
         const progressMap = {
-            'processing': { 
-                progress: 15, 
-                text: 'Reading and processing the file...', 
-                stage: 'upload' 
-            },
-            'extracting_text': { 
-                progress: 45, 
-                text: 'Extracting text with OCR (fallback activated)...', 
-                stage: 'ocr' 
-            },
-            'analyzing': { 
-                progress: 85, 
-                text: 'Analyzing risks with DeepSeek AI...', 
-                stage: 'analysis' 
-            },
-            'completed': { 
-                progress: 100, 
-                text: 'Analysis complete!', 
-                stage: 'complete' 
-            },
-            'error': { 
-                progress: 100, 
-                text: 'Analysis failed', 
-                stage: 'error' 
-            }
+            'processing': { progress: 15, text: 'Reading and processing the file...', stage: 'upload' },
+            'extracting_text': { progress: 45, text: 'Extracting text with OCR (fallback activated)...', stage: 'ocr' },
+            'analyzing': { progress: 85, text: 'Analyzing risks with DeepSeek AI...', stage: 'analysis' },
+            'completed': { progress: 100, text: 'Analysis complete!', stage: 'complete' },
+            'error': { progress: 100, text: 'Analysis failed', stage: 'error' }
         };
         
         function updateProgress(progress) {
@@ -518,11 +499,7 @@
         }
         
         function updateStatus(status, data = null) {
-            const statusInfo = progressMap[status] || { 
-                progress: 0, 
-                text: `Status: ${status}`, 
-                stage: 'upload' 
-            };
+            const statusInfo = progressMap[status] || { progress: 0, text: `Status: ${status}`, stage: 'upload' };
             
             // ALWAYS prioritize backend data over static mapping
             const progress = (data && data.progress !== undefined) ? data.progress : statusInfo.progress;
@@ -533,18 +510,14 @@
             updateProgress(progress);
             updateStageIndicator(stage);
             
-            console.log(`🔄 UI Update: ${status} (${progress}%) - ${message} [${stage}]`);
-            
             if (status === 'completed') {
                 progressSpinner.style.display = 'none';
                 statusIcon.style.background = 'var(--success-color)';
                 statusIcon.style.animation = 'none';
-                console.log('✅ Analysis completed - stopping spinner');
             } else if (status === 'error') {
                 progressSpinner.style.display = 'none';
                 statusIcon.style.background = 'var(--danger-color)';
                 statusIcon.style.animation = 'none';
-                console.log('❌ Analysis failed - stopping spinner');
             }
         }
         
@@ -554,7 +527,6 @@
             
             stages.forEach((stage, index) => {
                 stage.classList.remove('active', 'completed', 'error');
-                
                 if (stageNames[index] === activeStage) {
                     if (activeStage === 'error') {
                         stage.classList.add('error');
@@ -568,22 +540,17 @@
         }
         
         function pollStatus() {
-            console.log('🔄 POLLING STATUS...', statusUrl);
             fetch(statusUrl)
                 .then(response => {
-                    console.log('📡 Response received:', response.status, response.statusText);
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
                     return response.json();
                 })
                 .then(data => {
-                    console.log('📊 RAW STATUS DATA:', JSON.stringify(data, null, 2));
-                    console.log('🎯 PROGRESS:', data.progress, '| MESSAGE:', data.message, '| STAGE:', data.stage);
                     updateStatus(data.status, data);
                     
                     if (data.status === 'completed') {
-                        console.log('Analysis completed, stopping polling');
                         clearInterval(pollInterval);
                         setTimeout(() => {
                             progressContainer.style.display = 'none';
@@ -593,7 +560,6 @@
                             analysisResults.classList.add('success-animation');
                         }, 1000);
                     } else if (data.status === 'error') {
-                        console.log('Analysis failed, stopping polling');
                         clearInterval(pollInterval);
                         setTimeout(() => {
                             progressContainer.style.display = 'none';
@@ -602,22 +568,10 @@
                             analysisResults.classList.add('show');
                             retryBtn.style.display = 'inline-block';
                         }, 1000);
-                    } else {
-                        // Continue polling for ALL intermediate statuses
-                        console.log(`🔄 Continuing to poll, current status: ${data.status} (${data.progress}%)`);
-                        // Ensure we keep polling for ANY status that isn't completed or error
-                        if (data.status !== 'completed' && data.status !== 'error') {
-                            console.log(`⏳ Status ${data.status} is still processing, will poll again`);
-                        }
                     }
                 })
                 .catch(error => {
-                    console.error('🚨 POLLING ERROR:', error);
-                    console.error('🚨 ERROR DETAILS:', error.message);
-                    console.error('🚨 STATUS URL:', statusUrl);
-                    // Don't stop polling on network errors - retry
-                    console.log('🔄 Network error, will retry polling in next interval');
-                    // Alert user if repeated failures
+                    console.error('Polling error:', error.message, 'at', statusUrl);
                     if (window.pollErrorCount) {
                         window.pollErrorCount++;
                         if (window.pollErrorCount > 5) {
@@ -703,28 +657,35 @@
         
         // Initialize
         const currentStatus = '{{ document.status }}';
-        console.log(`🚀 Initializing with status: ${currentStatus}`);
-        
-        if (currentStatus !== 'completed' && currentStatus !== 'error') {
+        if (currentStatus === 'completed') {
+            // Document is already completed - hide progress bar immediately
+            progressContainer.style.display = 'none';
+            analysisResults.style.display = 'block';
+            analysisResults.classList.add('show');
+            
+            // Check if analysis results are empty and need to be loaded dynamically
+            if (!analysisResults.innerHTML.trim() || analysisResults.innerHTML.includes('No analysis data')) {
+                fetch(statusUrl)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'completed' && data.analysis) {
+                            analysisResults.innerHTML = generateAnalysisHtml(data.analysis);
+                        }
+                    })
+                    .catch(error => console.error('Error loading completed analysis:', error));
+            }
+        } else if (currentStatus === 'error') {
+            // Document has error - hide progress bar and show error
+            progressContainer.style.display = 'none';
+            analysisResults.style.display = 'block';
+            analysisResults.classList.add('show');
+            retryBtn.style.display = 'inline-block';
+        } else {
+            // Document is still processing - start polling
             updateStatus(currentStatus);
-            console.log('🔄 Starting aggressive polling (every 2 seconds)');
             pollInterval = setInterval(pollStatus, 2000); // Poll every 2 seconds for faster updates
             // Also poll immediately to get latest status
             setTimeout(pollStatus, 500);
-        } else if (currentStatus === 'completed' && !analysisResults.innerHTML.trim()) {
-            // Load completed analysis
-            console.log('📊 Loading completed analysis');
-            fetch(statusUrl)
-                .then(r => r.json())
-                .then(data => {
-                    if (data.status === 'completed') {
-                        analysisResults.innerHTML = generateAnalysisHtml(data.analysis);
-                        analysisResults.style.display = 'block';
-                        analysisResults.classList.add('show');
-                        console.log('✅ Completed analysis loaded');
-                    }
-                })
-                .catch(error => console.error('Error loading completed analysis:', error));
         }
     });
     
@@ -751,3 +712,4 @@
     }
 </script>
 {% endblock %} 
+
