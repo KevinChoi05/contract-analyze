@@ -6,6 +6,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, abort, flash
 from werkzeug.utils import secure_filename
 from psycopg2.extras import RealDictCursor
+import psycopg2
 from database import get_db_connection
 from core import extract_text_robust, analyze_contract
 
@@ -21,16 +22,19 @@ def analyze_document(doc_id, app_context):
                 with status_conn.cursor() as status_cursor:
                     if progress_info:
                         # Store progress info in analysis field temporarily
+                        logger.info(f"🔄 THREAD UPDATE: Doc {doc_id} → {status_message} | Progress: {progress_info}")
                         status_cursor.execute(
                             "UPDATE documents SET status = %s, analysis = %s WHERE id = %s", 
                             (status_message, json.dumps(progress_info), doc_id)
                         )
                     else:
+                        logger.info(f"🔄 THREAD UPDATE: Doc {doc_id} → {status_message}")
                         status_cursor.execute(
                             "UPDATE documents SET status = %s WHERE id = %s", 
                             (status_message, doc_id)
                         )
                     status_conn.commit()
+                    logger.info(f"✅ DB COMMIT: Doc {doc_id} status updated to {status_message}")
 
         try:
             # Get document from database
@@ -45,6 +49,10 @@ def analyze_document(doc_id, app_context):
 
             # Start text extraction with progress
             update_status('extracting_text', {'progress': 30, 'message': 'Extracting text with OCR...'})
+            
+            # Add small delay to make progress visible
+            import time
+            time.sleep(1)
             
             try:
                 text = extract_text_robust(doc['filepath'])
@@ -66,6 +74,9 @@ def analyze_document(doc_id, app_context):
             # Start analysis with progress
             update_status('analyzing', {'progress': 70, 'message': 'Analyzing risks with DeepSeek AI...'})
             
+            # Add small delay to make progress visible
+            time.sleep(1)
+            
             analysis_result = analyze_contract(text)
             
             if analysis_result.get("error"):
@@ -73,6 +84,9 @@ def analyze_document(doc_id, app_context):
             
             # Finalizing
             update_status('analyzing', {'progress': 95, 'message': 'Finalizing summary...'})
+            
+            # Add small delay to make progress visible
+            time.sleep(1)
             
             # Store results
             with get_db_connection() as final_conn:
@@ -310,13 +324,15 @@ def status(doc_id):
     conn = None
     try:
         conn = get_db_connection()
+        # Ensure we see latest committed data
+        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT status, analysis FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
         doc = cursor.fetchone()
         
         if doc:
             # Log current status for debugging
-            logger.info(f"Status check for doc {doc_id}: {doc['status']}")
+            logger.info(f"📊 STATUS CHECK for doc {doc_id}: {doc['status']} | Analysis: {bool(doc['analysis'])}")
             
             # Enhanced progress mapping with detailed stages
             progress_map = {

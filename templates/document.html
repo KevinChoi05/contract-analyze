@@ -554,16 +554,18 @@
         }
         
         function pollStatus() {
-            console.log('Polling status...');
+            console.log('🔄 POLLING STATUS...', statusUrl);
             fetch(statusUrl)
                 .then(response => {
+                    console.log('📡 Response received:', response.status, response.statusText);
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
                     return response.json();
                 })
                 .then(data => {
-                    console.log('Status update received:', data);
+                    console.log('📊 RAW STATUS DATA:', JSON.stringify(data, null, 2));
+                    console.log('🎯 PROGRESS:', data.progress, '| MESSAGE:', data.message, '| STAGE:', data.stage);
                     updateStatus(data.status, data);
                     
                     if (data.status === 'completed') {
@@ -596,9 +598,20 @@
                     }
                 })
                 .catch(error => {
-                    console.error('Polling error:', error);
+                    console.error('🚨 POLLING ERROR:', error);
+                    console.error('🚨 ERROR DETAILS:', error.message);
+                    console.error('🚨 STATUS URL:', statusUrl);
                     // Don't stop polling on network errors - retry
-                    console.log('Network error, will retry polling in next interval');
+                    console.log('🔄 Network error, will retry polling in next interval');
+                    // Alert user if repeated failures
+                    if (window.pollErrorCount) {
+                        window.pollErrorCount++;
+                        if (window.pollErrorCount > 5) {
+                            alert('Connection issues detected. Please refresh the page.');
+                        }
+                    } else {
+                        window.pollErrorCount = 1;
+                    }
                 });
         }
         
