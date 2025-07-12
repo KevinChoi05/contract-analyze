@@ -8,7 +8,7 @@ from werkzeug.utils import secure_filename
 from psycopg2.extras import RealDictCursor
 import psycopg2
 from database import get_db_connection
-from core import extract_text_robust, analyze_contract
+from core import extract_text_unified, analyze_contract
 
 logger = logging.getLogger(__name__)
 doc_bp = Blueprint('doc', __name__)
@@ -71,7 +71,7 @@ def analyze_document(doc_id, app_context):
             time.sleep(1)  # Small delay for visibility
             
             try:
-                text = extract_text_robust(doc['filepath'])
+                text = extract_text_unified(doc['filepath'])
                 if text is None:
                     raise ValueError("Could not extract readable text from this document. The file may be corrupted, password-protected, or contain only images without text.")
                 
