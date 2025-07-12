@@ -211,7 +211,8 @@ def upload_file():
     return redirect(url_for('doc.dashboard'))
 
 @doc_bp.route('/status/<int:doc_id>')
-def get_status(doc_id):
+def status(doc_id):
+    """Get document status for polling - renamed from get_status to match frontend URL"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
@@ -228,9 +229,17 @@ def get_status(doc_id):
                 'analysis': doc['analysis']
             }
             
+            # Parse analysis JSON if it's a string
+            if doc['analysis'] and isinstance(doc['analysis'], str):
+                try:
+                    response['analysis'] = json.loads(doc['analysis'])
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse analysis JSON for document {doc_id}")
+                    response['analysis'] = None
+            
             # If there's an error, include the error message
-            if doc['status'] == 'error' and doc['analysis'] and isinstance(doc['analysis'], dict):
-                response['error_message'] = doc['analysis'].get('error', 'Unknown error occurred')
+            if doc['status'] == 'error' and response['analysis'] and isinstance(response['analysis'], dict):
+                response['error_message'] = response['analysis'].get('error', 'Unknown error occurred')
             
             return jsonify(response)
         else:
@@ -238,6 +247,42 @@ def get_status(doc_id):
     except Exception as e:
         logger.error(f"Database status error: {e}")
         return jsonify({'error': 'Could not retrieve status.'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@doc_bp.route('/progress/<int:doc_id>')
+def progress(doc_id):
+    """Get document progress for progress bar updates"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT status FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+        doc = cursor.fetchone()
+        
+        if doc:
+            # Map status to progress percentage
+            progress_map = {
+                'processing': 10,
+                'extracting_text': 40,
+                'analyzing': 80,
+                'completed': 100,
+                'error': 100
+            }
+            
+            return jsonify({
+                'status': doc['status'],
+                'progress': progress_map.get(doc['status'], 0)
+            })
+        else:
+            return jsonify({'error': 'Document not found'}), 404
+    except Exception as e:
+        logger.error(f"Database progress error: {e}")
+        return jsonify({'error': 'Could not retrieve progress.'}), 500
     finally:
         if conn:
             conn.close()
@@ -276,6 +321,7 @@ def get_documents():
 
 @doc_bp.route('/retry/<int:doc_id>', methods=['POST'])
 def retry_document(doc_id):
+    """Retry document analysis - renamed from retry_document to match frontend URL"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     

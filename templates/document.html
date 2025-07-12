@@ -179,7 +179,8 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const docId = {{ document.id }};
-        const pollUrl = "{{ url_for('doc.status', doc_id=docId) }}";
+        const pollUrl = "{{ url_for('doc.status', doc_id=document.id) }}";
+        const progressUrl = "{{ url_for('doc.progress', doc_id=document.id) }}";
 
         const loadingContainer = document.getElementById('loading-state');
         const analysisContainer = document.getElementById('analysis-content');
@@ -189,6 +190,7 @@
 
         let currentProgress = 0;
         let progressInterval = null;
+        let pollTimeout = null;
 
         const statusMap = {
             'processing': { min: 0, max: 30, message: 'Initializing processing...' },
@@ -200,10 +202,12 @@
 
         function startProgressIncrement(min, max) {
             if (progressInterval) clearInterval(progressInterval);
-            currentProgress = min;
+            currentProgress = Math.max(currentProgress, min); // Never go backwards
             updateProgressBar(currentProgress);
 
-            const increment = (max - min) / 100; // Divide into 100 steps for smoothness
+            if (currentProgress >= max) return;
+
+            const increment = (max - min) / 20; // Divide into 20 steps for smoothness
             progressInterval = setInterval(() => {
                 currentProgress += increment;
                 if (currentProgress >= max) {
@@ -211,7 +215,7 @@
                     clearInterval(progressInterval);
                 }
                 updateProgressBar(currentProgress);
-            }, 300); // Adjust speed: smaller interval for faster progress
+            }, 200); // Update every 200ms for smooth animation
         }
 
         function updateProgressBar(percent) {
@@ -230,27 +234,34 @@
             fetch(pollUrl)
                 .then(response => response.json())
                 .then(data => {
+                    console.log('Status poll response:', data);
                     updateProgress(data.status);
 
                     if (data.status === 'completed') {
                         clearInterval(progressInterval);
+                        clearTimeout(pollTimeout);
                         loadingContainer.style.display = 'none';
                         analysisContainer.innerHTML = generateAnalysisHtml(data.analysis);
                         analysisContainer.style.display = 'block';
                     } else if (data.status === 'error') {
                         clearInterval(progressInterval);
+                        clearTimeout(pollTimeout);
                         loadingContainer.style.display = 'none';
                         analysisContainer.innerHTML = generateErrorHtml(data.error_message);
                         analysisContainer.style.display = 'block';
                         retryBtn.style.display = 'inline-block';
                     } else {
-                        setTimeout(pollForStatus, 2000); // Poll every 2 seconds
+                        // Continue polling
+                        pollTimeout = setTimeout(pollForStatus, 2000); // Poll every 2 seconds
                     }
                 })
                 .catch(error => {
                     console.error('Error polling for status:', error);
                     clearInterval(progressInterval);
+                    clearTimeout(pollTimeout);
                     analysisContainer.innerHTML = generateErrorHtml('Could not retrieve analysis status.');
+                    analysisContainer.style.display = 'block';
+                    loadingContainer.style.display = 'none';
                 });
         }
 
@@ -269,7 +280,7 @@
             let clausesHtml = '';
             if (analysis.clauses && analysis.clauses.length > 0) {
                 clausesHtml = analysis.clauses.map(c => `
-                    <div class="card mb-3 risk-card">
+                    <div class="card mb-3 risk-card ${getRiskCardClass(c.risk_score)}">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h6 class="mb-0">${c.type || 'Uncategorized Clause'}</h6>
                             <span class="badge bg-${getRiskScoreColor(c.risk_score)}">
@@ -280,7 +291,7 @@
                             <p><strong>Risk:</strong> ${c.clause || 'No description provided.'}</p>
                             <p><strong>Consequences:</strong> ${c.consequences || 'No consequences listed.'}</p>
                             <p><strong>Mitigation:</strong> ${c.mitigation || 'No mitigation suggested.'}</p>
-                            ${c.exact_text ? `<hr><div class="quote">${c.exact_text}</div>` : ''}
+                            ${c.exact_text ? `<hr><div class="quote">${escapeHtml(c.exact_text)}</div>` : ''}
                         </div>
                     </div>
                 `).join('');
@@ -315,35 +326,59 @@
             return 'success';
         }
 
-        function getRiskColor(level) {
-            switch(level ? level.toLowerCase() : '') {
-                case 'high': return 'danger';
-                case 'medium': return 'warning';
-                case 'low': return 'success';
-                default: return 'secondary';
-            }
+        function getRiskCardClass(score) {
+            if (score >= 70) return 'risk-high';
+            if (score >= 40) return 'risk-medium';
+            return 'risk-low';
         }
 
-        // Initial check
-        if (loadingContainer.style.display !== 'none') {
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial check - start polling if document is still processing
+        const currentStatus = '{{ document.status }}';
+        if (currentStatus !== 'completed' && currentStatus !== 'error') {
             pollForStatus();
-        } else if (document.getElementById('analysis-content').innerHTML.trim() === '') {
+        } else if (currentStatus === 'completed' && analysisContainer.innerHTML.trim() === '') {
+            // If completed but no analysis shown, fetch it
             fetch(pollUrl)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === 'completed') {
                         analysisContainer.innerHTML = generateAnalysisHtml(data.analysis);
-                    } else if (data.status === 'error') {
-                        analysisContainer.innerHTML = generateErrorHtml(data.error_message);
-                        retryBtn.style.display = 'inline-block';
+                        analysisContainer.style.display = 'block';
+                        loadingContainer.style.display = 'none';
                     }
+                })
+                .catch(error => {
+                    console.error('Error fetching completed analysis:', error);
                 });
         }
     });
 
     function retryAnalysis() {
-        // Implement retry logic if needed
-        alert('Retry functionality not yet implemented.');
+        const docId = {{ document.id }};
+        fetch(`{{ url_for('doc.retry_document', doc_id=document.id) }}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.message) {
+                location.reload(); // Reload page to restart the polling process
+            } else {
+                alert('Failed to retry analysis: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error retrying analysis:', error);
+            alert('Failed to retry analysis. Please try again.');
+        });
     }
 </script>
 {% endblock %} 
