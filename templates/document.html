@@ -503,16 +503,23 @@
             progressPercentage.textContent = Math.round(currentProgress) + '%';
         }
         
-        function updateStatus(status) {
+        function updateStatus(status, data = null) {
             const statusInfo = progressMap[status] || { 
                 progress: 0, 
                 text: `Status: ${status}`, 
                 stage: 'upload' 
             };
             
-            statusText.textContent = statusInfo.text;
-            updateProgress(statusInfo.progress);
-            updateStageIndicator(statusInfo.stage);
+            // Use backend data if available, otherwise use local mapping
+            const progress = (data && data.progress !== undefined) ? data.progress : statusInfo.progress;
+            const message = (data && data.message) ? data.message : statusInfo.text;
+            const stage = (data && data.stage) ? data.stage : statusInfo.stage;
+            
+            statusText.textContent = message;
+            updateProgress(progress);
+            updateStageIndicator(stage);
+            
+            console.log(`UI Update: ${status} (${progress}%) - ${message} [${stage}]`);
             
             if (status === 'completed') {
                 progressSpinner.style.display = 'none';
@@ -545,13 +552,20 @@
         }
         
         function pollStatus() {
+            console.log('Polling status...');
             fetch(statusUrl)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    console.log('Status update:', data);
-                    updateStatus(data.status);
+                    console.log('Status update received:', data);
+                    updateStatus(data.status, data);
                     
                     if (data.status === 'completed') {
+                        console.log('Analysis completed, stopping polling');
                         clearInterval(pollInterval);
                         setTimeout(() => {
                             progressContainer.style.display = 'none';
@@ -561,6 +575,7 @@
                             analysisResults.classList.add('success-animation');
                         }, 1000);
                     } else if (data.status === 'error') {
+                        console.log('Analysis failed, stopping polling');
                         clearInterval(pollInterval);
                         setTimeout(() => {
                             progressContainer.style.display = 'none';
@@ -569,12 +584,15 @@
                             analysisResults.classList.add('show');
                             retryBtn.style.display = 'inline-block';
                         }, 1000);
+                    } else {
+                        // Continue polling for processing, extracting_text, analyzing statuses
+                        console.log(`Continuing to poll, current status: ${data.status} (${data.progress}%)`);
                     }
                 })
                 .catch(error => {
                     console.error('Polling error:', error);
-                    clearInterval(pollInterval);
-                    updateStatus('error');
+                    // Don't stop polling on network errors - retry
+                    console.log('Network error, will retry polling in next interval');
                 });
         }
         

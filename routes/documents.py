@@ -315,36 +315,87 @@ def status(doc_id):
         doc = cursor.fetchone()
         
         if doc:
+            # Log current status for debugging
+            logger.info(f"Status check for doc {doc_id}: {doc['status']}")
+            
+            # Enhanced progress mapping with detailed stages
+            progress_map = {
+                'processing': {
+                    'progress': 10,
+                    'stage': 'upload',
+                    'message': 'Reading the file...',
+                    'stage_text': 'Initializing processing'
+                },
+                'extracting_text': {
+                    'progress': 40,
+                    'stage': 'ocr',
+                    'message': 'Extracting text with OCR (fallback activated)...',
+                    'stage_text': 'Converting document to text'
+                },
+                'analyzing': {
+                    'progress': 80,
+                    'stage': 'analysis',
+                    'message': 'Analyzing risks with DeepSeek AI...',
+                    'stage_text': 'Identifying contract risks'
+                },
+                'completed': {
+                    'progress': 100,
+                    'stage': 'complete',
+                    'message': 'Analysis complete!',
+                    'stage_text': 'Finalizing results'
+                },
+                'error': {
+                    'progress': 100,
+                    'stage': 'error',
+                    'message': 'Analysis failed',
+                    'stage_text': 'Error occurred'
+                }
+            }
+            
+            status_info = progress_map.get(doc['status'], {
+                'progress': 0,
+                'stage': 'upload',
+                'message': f'Status: {doc["status"]}',
+                'stage_text': 'Processing document'
+            })
+            
             response = {
                 'status': doc['status'],
-                'analysis': doc['analysis']
+                'progress': status_info['progress'],
+                'stage': status_info['stage'],
+                'message': status_info['message'],
+                'stage_text': status_info['stage_text'],
+                'analysis': None
             }
             
             # Parse analysis JSON if it's a string
             if doc['analysis'] and isinstance(doc['analysis'], str):
                 try:
-                    response['analysis'] = json.loads(doc['analysis'])
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to parse analysis JSON for document {doc_id}")
+                    parsed_analysis = json.loads(doc['analysis'])
+                    
+                    # If status is in progress and analysis contains progress info, use it
+                    if doc['status'] in ['processing', 'extracting_text', 'analyzing'] and isinstance(parsed_analysis, dict) and 'progress' in parsed_analysis:
+                        response['progress'] = parsed_analysis['progress']
+                        response['message'] = parsed_analysis.get('message', status_info['message'])
+                        logger.info(f"Using dynamic progress for doc {doc_id}: {response['progress']}% - {response['message']}")
+                    elif doc['status'] == 'completed':
+                        response['analysis'] = parsed_analysis
+                        logger.info(f"Returning completed analysis for doc {doc_id}")
+                    elif doc['status'] == 'error':
+                        response['error_message'] = parsed_analysis.get('error', 'Unknown error occurred')
+                        logger.info(f"Returning error for doc {doc_id}: {response['error_message']}")
+                        
+                except json.JSONDecodeError as json_error:
+                    logger.error(f"Failed to parse analysis JSON for document {doc_id}: {json_error}")
                     response['analysis'] = None
             
-            # If status is in progress and analysis contains progress info, extract it
-            if doc['status'] in ['processing', 'extracting_text', 'analyzing'] and response['analysis']:
-                if isinstance(response['analysis'], dict) and 'progress' in response['analysis']:
-                    response['progress'] = response['analysis']['progress']
-                    response['message'] = response['analysis'].get('message', 'Processing...')
-                    # Don't return the temporary progress data as analysis
-                    response['analysis'] = None
-            
-            # If there's an error, include the error message
-            if doc['status'] == 'error' and response['analysis'] and isinstance(response['analysis'], dict):
-                response['error_message'] = response['analysis'].get('error', 'Unknown error occurred')
-            
+            logger.info(f"Status response for doc {doc_id}: {response['status']} ({response['progress']}%) - {response['message']}")
             return jsonify(response)
         else:
+            logger.warning(f"Document {doc_id} not found for user {session.get('user_id')}")
             return jsonify({'error': 'Document not found'}), 404
     except Exception as e:
-        logger.error(f"Database status error: {e}")
+        logger.error(f"Database status error for doc {doc_id}: {e}", exc_info=True)
         return jsonify({'error': 'Could not retrieve status.'}), 500
     finally:
         if conn:
