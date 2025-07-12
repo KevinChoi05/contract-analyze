@@ -3,17 +3,38 @@ import time
 import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+def get_db_config():
+    """Get database configuration from environment variables or DATABASE_URL"""
+    # Check for Railway's DATABASE_URL first
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        try:
+            parsed = urlparse(database_url)
+            return {
+                'host': parsed.hostname,
+                'port': parsed.port or 5432,
+                'database': parsed.path[1:],  # Remove leading slash
+                'user': parsed.username,
+                'password': parsed.password
+            }
+        except Exception as e:
+            logger.warning(f"Failed to parse DATABASE_URL: {e}")
+    
+    # Fallback to individual environment variables
+    return {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': os.getenv('DB_PORT', '5432'),
+        'database': os.getenv('DB_NAME', 'contract_analyzer'),
+        'user': os.getenv('DB_USER', 'contract_user'),
+        'password': os.getenv('DB_PASSWORD', 'contract_password')
+    }
+
 # Database configuration
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432'),
-    'database': os.getenv('DB_NAME', 'contract_analyzer'),
-    'user': os.getenv('DB_USER', 'contract_user'),
-    'password': os.getenv('DB_PASSWORD', 'contract_password')
-}
+DB_CONFIG = get_db_config()
 
 def get_db_connection():
     """Get a persistent database connection.
@@ -32,10 +53,11 @@ def get_db_connection():
         raise e
 
 def init_database():
-    """Initialize database tables for PostgreSQL with retry logic."""
+    """Initialize database tables for PostgreSQL with Railway-optimized retry logic."""
     conn = None
-    retries = 5
-    delay = 5  # seconds
+    retries = 3  # Reduced from 5 for faster startup
+    delay = 2   # Reduced from 5 seconds
+    
     for i in range(retries):
         try:
             conn = get_db_connection()
@@ -72,7 +94,7 @@ def init_database():
             if i < retries - 1:
                 time.sleep(delay)
             else:
-                logger.critical("Could not connect to the database after several retries. Exiting.")
+                logger.error("Could not connect to the database after retries. Service will continue with limited functionality.")
                 raise  # Re-raise the exception after the last attempt
         finally:
             if conn:
