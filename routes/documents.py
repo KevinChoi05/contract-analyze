@@ -373,17 +373,17 @@ def status(doc_id):
                 try:
                     parsed_analysis = json.loads(doc['analysis'])
                     
-                    # If status is in progress and analysis contains progress info, use it
+                    # PRIORITY: If status is in progress and analysis contains progress info, ALWAYS use it
                     if doc['status'] in ['processing', 'extracting_text', 'analyzing'] and isinstance(parsed_analysis, dict) and 'progress' in parsed_analysis:
                         response['progress'] = parsed_analysis['progress']
                         response['message'] = parsed_analysis.get('message', status_info['message'])
-                        logger.info(f"Using dynamic progress for doc {doc_id}: {response['progress']}% - {response['message']}")
+                        logger.info(f"🔄 Using DYNAMIC progress for doc {doc_id}: {response['progress']}% - {response['message']}")
                     elif doc['status'] == 'completed':
                         response['analysis'] = parsed_analysis
-                        logger.info(f"Returning completed analysis for doc {doc_id}")
+                        logger.info(f"✅ Returning completed analysis for doc {doc_id}")
                     elif doc['status'] == 'error':
                         response['error_message'] = parsed_analysis.get('error', 'Unknown error occurred')
-                        logger.info(f"Returning error for doc {doc_id}: {response['error_message']}")
+                        logger.info(f"❌ Returning error for doc {doc_id}: {response['error_message']}")
                         
                 except json.JSONDecodeError as json_error:
                     logger.error(f"Failed to parse analysis JSON for document {doc_id}: {json_error}")

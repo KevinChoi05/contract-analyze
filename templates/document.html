@@ -359,7 +359,7 @@
         
         <div class="progress-status">
             <div class="status-icon" id="status-icon"></div>
-            <div class="status-text" id="status-text">Initializing analysis...</div>
+            <div class="status-text" id="status-text">Reading and processing the file...</div>
         </div>
         
         <div class="stage-indicator">
@@ -468,20 +468,20 @@
         let currentProgress = 0;
         let pollInterval = null;
         
-        // Progress mapping
+        // Progress mapping - SYNCED WITH BACKEND
         const progressMap = {
             'processing': { 
-                progress: 10, 
-                text: 'Reading the file...', 
+                progress: 15, 
+                text: 'Reading and processing the file...', 
                 stage: 'upload' 
             },
             'extracting_text': { 
-                progress: 40, 
-                text: 'Extracting text with OCR...', 
+                progress: 45, 
+                text: 'Extracting text with OCR (fallback activated)...', 
                 stage: 'ocr' 
             },
             'analyzing': { 
-                progress: 80, 
+                progress: 85, 
                 text: 'Analyzing risks with DeepSeek AI...', 
                 stage: 'analysis' 
             },
