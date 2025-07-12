@@ -77,7 +77,22 @@ def analyze_document(doc_id, app_context):
             # Add small delay to make progress visible
             time.sleep(1)
             
-            analysis_result = analyze_contract(text)
+            # Import debug utilities
+            try:
+                from debug_utils import debug_full_pipeline, debug_analysis_result, debug_db_storage, debug_error
+            except ImportError:
+                # Fallback if debug_utils not available
+                def debug_full_pipeline(*args, **kwargs): pass
+                def debug_analysis_result(*args, **kwargs): pass
+                def debug_db_storage(*args, **kwargs): pass
+                def debug_error(*args, **kwargs): pass
+            
+            debug_full_pipeline(doc_id, "ai_analysis_start", f"Text length: {len(text)}")
+            
+            analysis_result = analyze_contract(text, doc_id)
+            
+            debug_full_pipeline(doc_id, "ai_analysis_complete")
+            debug_analysis_result(analysis_result, doc_id)
             
             if analysis_result.get("error"):
                 raise Exception(analysis_result["error"])
@@ -105,6 +120,9 @@ def analyze_document(doc_id, app_context):
             time.sleep(1)
             
             # Store results
+            debug_full_pipeline(doc_id, "db_storage_start")
+            debug_db_storage(analysis_result, doc_id)
+            
             with get_db_connection() as final_conn:
                 with final_conn.cursor() as final_cursor:
                     final_cursor.execute(
@@ -112,6 +130,8 @@ def analyze_document(doc_id, app_context):
                         (json.dumps(analysis_result), doc_id)
                     )
                     final_conn.commit()
+            
+            debug_full_pipeline(doc_id, "db_storage_complete")
             
             logger.info(f"Document analysis completed: {doc['filename']} (ID: {doc_id})")
             
@@ -204,6 +224,14 @@ def document_page(doc_id):
         
         # Attempt to render template with comprehensive error handling
         try:
+            # Import debug utilities
+            try:
+                from debug_utils import debug_template_data
+            except ImportError:
+                def debug_template_data(*args, **kwargs): pass
+            
+            debug_template_data(doc, doc_id)
+            
             logger.info(f"Attempting to render template for document {doc_id}")
             return render_template('document.html', document=doc)
         except Exception as template_error:
@@ -616,4 +644,22 @@ def dashboard():
     documents = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template('index.html', documents=documents) 
+    return render_template('index.html', documents=documents)
+
+@doc_bp.route('/debug/enable')
+def enable_debug():
+    """Enable debug mode for comprehensive logging."""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        from debug_utils import enable_debug_mode
+        enable_debug_mode()
+        return jsonify({
+            'message': 'Debug mode enabled',
+            'debug_log': 'logs/debug.log',
+            'response_files': 'logs/deepseek_response_*.txt',
+            'usage': 'Upload a document to see detailed debugging logs'
+        })
+    except ImportError:
+        return jsonify({'error': 'Debug utilities not available'}), 500 

@@ -139,10 +139,26 @@ def parse_clauses(content: str) -> list:
     
     return clauses
 
-def analyze_contract(text_content):
+def analyze_contract(text_content, doc_id=None):
     """Analyzes contract text using DeepSeek and returns structured JSON."""
+    # Import debug utilities
+    try:
+        from debug_utils import debug_full_pipeline, debug_deepseek_response, debug_json_parsing, debug_string_parsing, debug_analysis_result, debug_error
+    except ImportError:
+        # Fallback if debug_utils not available
+        def debug_full_pipeline(*args, **kwargs): pass
+        def debug_deepseek_response(*args, **kwargs): pass
+        def debug_json_parsing(*args, **kwargs): pass
+        def debug_string_parsing(*args, **kwargs): pass
+        def debug_analysis_result(*args, **kwargs): pass
+        def debug_error(*args, **kwargs): pass
+    
+    debug_full_pipeline(doc_id, "analyze_contract_start", f"Text length: {len(text_content)}")
+    
     if not DEEPSEEK_API_KEY:
-        return {"error": "DeepSeek API Key not configured."}
+        error_result = {"error": "DeepSeek API Key not configured."}
+        debug_analysis_result(error_result, doc_id)
+        return error_result
     
     system_message = """You are an expert contract risk analyst. Your job is to identify business risks and provide EXACT SOURCE LOCATIONS.
 CRITICAL REQUIREMENTS:
@@ -181,6 +197,8 @@ JSON RESPONSE FORMAT:
     prompt = f"ANALYZE this contract and identify the TOP 8-10 MOST CRITICAL business risks. Return a valid JSON object.\n\nCONTRACT TEXT:\n{text_content[:24000]}"
     
     try:
+        debug_full_pipeline(doc_id, "deepseek_api_call")
+        
         client = openai.OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
         response = client.chat.completions.create(
             model="deepseek-chat",
@@ -194,25 +212,38 @@ JSON RESPONSE FORMAT:
         response_text = response.choices[0].message.content
         logger.info(f"🤖 DeepSeek raw response: {response_text[:500]}...")
         
+        # 🔍 DEBUG: Analyze DeepSeek response
+        debug_deepseek_response(response_text, doc_id)
+        
         # Try to extract JSON from markdown code block
+        debug_full_pipeline(doc_id, "json_parsing_attempt")
+        debug_json_parsing(response_text, doc_id)
+        
         match = re.search(r'```json\s*([\s\S]*?)\s*```', response_text)
         if match:
             try:
                 parsed_json = json.loads(match.group(1))
                 logger.info(f"✅ Successfully parsed JSON from markdown block")
+                debug_analysis_result(parsed_json, doc_id)
                 return parsed_json
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 logger.warning("Failed to parse JSON from markdown block, trying string parsing")
+                debug_error(e, "markdown_json_parsing", doc_id)
         
         # Try to parse the whole response as JSON
         try:
             parsed_json = json.loads(response_text)
             logger.info(f"✅ Successfully parsed raw response as JSON")
+            debug_analysis_result(parsed_json, doc_id)
             return parsed_json
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             logger.warning("Failed to parse as JSON, falling back to string parsing")
+            debug_error(e, "raw_json_parsing", doc_id)
         
         # 🚨 FALLBACK: Parse string response into structured dict
+        debug_full_pipeline(doc_id, "string_parsing_fallback")
+        debug_string_parsing(response_text, doc_id)
+        
         logger.info(f"🔄 Parsing string response into structured format")
         summary = extract_summary(response_text)
         clauses = parse_clauses(response_text)
@@ -223,13 +254,18 @@ JSON RESPONSE FORMAT:
         }
         
         logger.info(f"✅ String parsing successful: {len(clauses)} clauses extracted")
+        debug_analysis_result(structured_result, doc_id)
         return structured_result
         
     except Exception as e:
         logger.error(f"Error in analyze_contract: {e}")
+        debug_error(e, "analyze_contract", doc_id)
+        
         # Return structured error instead of string
-        return {
+        error_result = {
             "error": f"Failed to analyze contract: {e}",
             "summary": "Analysis failed due to technical issues.",
             "clauses": []
-        } 
+        }
+        debug_analysis_result(error_result, doc_id)
+        return error_result 
