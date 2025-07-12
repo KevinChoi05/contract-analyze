@@ -115,7 +115,7 @@
         </div>
     </div>
 
-    <div id="loading-state" class="text-center p-5" {% if document.status == 'complete' or document.status == 'error' %}style="display: none;"{% endif %}>
+    <div id="loading-state" class="text-center p-5" {% if document.status == 'completed' or document.status == 'error' %}style="display: none;"{% endif %}>
         <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -126,8 +126,51 @@
         </div>
     </div>
 
-    <div id="analysis-content" {% if document.status != 'complete' and document.status != 'error' %}style="display: none;"{% endif %}>
-        <!-- This will be populated by JavaScript -->
+    <div id="analysis-content" {% if document.status != 'completed' and document.status != 'error' %}style="display: none;"{% endif %}>
+        {% if document.status == 'completed' and document.analysis %}
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h4 class="mb-0">Analysis Summary</h4>
+                </div>
+                <div class="card-body">
+                    <p>{{ document.analysis.summary if document.analysis.summary else 'No summary was generated.' }}</p>
+                </div>
+            </div>
+
+            {% if document.analysis.clauses %}
+            <div class="card shadow-sm mt-4">
+                <div class="card-header">
+                    <h4 class="mb-0">Identified Risk Clauses</h4>
+                </div>
+                <div class="card-body">
+                    {% for clause in document.analysis.clauses %}
+                    <div class="card mb-3 risk-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">{{ clause.type or 'Uncategorized Clause' }}</h6>
+                            <span class="badge bg-{{ 'danger' if clause.risk_score >= 70 else 'warning' if clause.risk_score >= 40 else 'success' }}">
+                                Risk Score: {{ clause.risk_score or 'N/A' }}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Risk:</strong> {{ clause.clause or 'No description provided.' }}</p>
+                            <p><strong>Consequences:</strong> {{ clause.consequences or 'No consequences listed.' }}</p>
+                            <p><strong>Mitigation:</strong> {{ clause.mitigation or 'No mitigation suggested.' }}</p>
+                            {% if clause.exact_text %}
+                            <hr>
+                            <div class="quote">{{ clause.exact_text }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% elif document.status == 'error' %}
+            <div class="alert alert-danger text-center">
+                <h4><i class="fas fa-times-circle me-2"></i>Analysis Failed</h4>
+                <p>{{ document.analysis.error if document.analysis and document.analysis.error else 'An unknown error occurred during processing.' }}</p>
+            </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
@@ -223,23 +266,27 @@
         function generateAnalysisHtml(analysis) {
             if (!analysis) return generateErrorHtml('The analysis result is empty.');
 
-            let partiesHtml = analysis.parties_involved.map(p => `<li><strong>${p.name || 'N/A'}:</strong> ${p.role || 'N/A'}</li>`).join('');
-            if (!partiesHtml) partiesHtml = '<p class="text-muted">No parties were clearly identified.</p>';
-
-            let clausesHtml = analysis.risk_clauses.map(c => `
-                <div class="card mb-3">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0">${c.clause_type || 'Uncategorized Clause'}</h6>
-                        <span class="badge bg-${getRiskColor(c.risk_level)}">${c.risk_level || 'Unknown'} Risk</span>
+            let clausesHtml = '';
+            if (analysis.clauses && analysis.clauses.length > 0) {
+                clausesHtml = analysis.clauses.map(c => `
+                    <div class="card mb-3 risk-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">${c.type || 'Uncategorized Clause'}</h6>
+                            <span class="badge bg-${getRiskScoreColor(c.risk_score)}">
+                                Risk Score: ${c.risk_score || 'N/A'}
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Risk:</strong> ${c.clause || 'No description provided.'}</p>
+                            <p><strong>Consequences:</strong> ${c.consequences || 'No consequences listed.'}</p>
+                            <p><strong>Mitigation:</strong> ${c.mitigation || 'No mitigation suggested.'}</p>
+                            ${c.exact_text ? `<hr><div class="quote">${c.exact_text}</div>` : ''}
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <p><strong>Explanation:</strong> ${c.explanation || 'No explanation provided.'}</p>
-                        <hr>
-                        <p class="text-muted fst-italic"><strong>Original Text:</strong> "${c.exact_text || 'Original text not extracted.'}"</p>
-                    </div>
-                </div>
-            `).join('');
-            if (!clausesHtml) clausesHtml = '<div class="alert alert-info">No specific risk clauses were identified in the analysis.</div>';
+                `).join('');
+            } else {
+                clausesHtml = '<div class="alert alert-info">No specific risk clauses were identified in the analysis.</div>';
+            }
             
             return `
                 <div class="card shadow-sm">
@@ -253,15 +300,6 @@
 
                 <div class="card shadow-sm mt-4">
                     <div class="card-header">
-                        <h4 class="mb-0">Parties Involved</h4>
-                    </div>
-                    <div class="card-body">
-                        <ul>${partiesHtml}</ul>
-                    </div>
-                </div>
-
-                <div class="card shadow-sm mt-4">
-                    <div class="card-header">
                         <h4 class="mb-0">Identified Risk Clauses</h4>
                     </div>
                     <div class="card-body">
@@ -269,6 +307,12 @@
                     </div>
                 </div>
             `;
+        }
+
+        function getRiskScoreColor(score) {
+            if (score >= 70) return 'danger';
+            if (score >= 40) return 'warning';
+            return 'success';
         }
 
         function getRiskColor(level) {

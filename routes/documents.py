@@ -87,6 +87,17 @@ def document_page(doc_id):
         
         if not doc:
             abort(404)
+        
+        # Log the document status for debugging
+        logger.info(f"Document {doc_id} status: {doc['status']}, has analysis: {bool(doc['analysis'])}")
+        
+        # Convert analysis from JSON string to dict if needed
+        if doc['analysis'] and isinstance(doc['analysis'], str):
+            try:
+                doc['analysis'] = json.loads(doc['analysis'])
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse analysis JSON for document {doc_id}")
+                doc['analysis'] = None
             
         return render_template('document.html', document=doc)
     except Exception as e:
@@ -212,10 +223,16 @@ def get_status(doc_id):
         doc = cursor.fetchone()
         
         if doc:
-            return jsonify({
+            response = {
                 'status': doc['status'],
                 'analysis': doc['analysis']
-            })
+            }
+            
+            # If there's an error, include the error message
+            if doc['status'] == 'error' and doc['analysis'] and isinstance(doc['analysis'], dict):
+                response['error_message'] = doc['analysis'].get('error', 'Unknown error occurred')
+            
+            return jsonify(response)
         else:
             return jsonify({'error': 'Document not found'}), 404
     except Exception as e:
