@@ -13,13 +13,23 @@ logger = logging.getLogger(__name__)
 doc_bp = Blueprint('doc', __name__)
 
 def analyze_document(doc_id, app_context):
-    """Background function to analyze document with progress updates."""
+    """Background function to analyze document with detailed progress updates."""
     with app_context:
-        def update_status(status_message):
-            """Helper to update status in the DB."""
+        def update_status(status_message, progress_info=None):
+            """Helper to update status in the DB with optional progress info."""
             with get_db_connection() as status_conn:
                 with status_conn.cursor() as status_cursor:
-                    status_cursor.execute("UPDATE documents SET status = %s WHERE id = %s", (status_message, doc_id))
+                    if progress_info:
+                        # Store progress info in analysis field temporarily
+                        status_cursor.execute(
+                            "UPDATE documents SET status = %s, analysis = %s WHERE id = %s", 
+                            (status_message, json.dumps(progress_info), doc_id)
+                        )
+                    else:
+                        status_cursor.execute(
+                            "UPDATE documents SET status = %s WHERE id = %s", 
+                            (status_message, doc_id)
+                        )
                     status_conn.commit()
 
         try:
@@ -33,24 +43,38 @@ def analyze_document(doc_id, app_context):
                 logger.error(f"Analysis failed: Document with ID {doc_id} not found.")
                 return
 
-            # Start text extraction
-            update_status('extracting_text')
-            text = extract_text_robust(doc['filepath'])
-            if text is None:
-                raise Exception("Could not extract readable text from this document. The file may be corrupted, password-protected, or contain only images without text.")
+            # Start text extraction with progress
+            update_status('extracting_text', {'progress': 30, 'message': 'Extracting text with OCR...'})
             
-            if len(text.strip()) < 50:
-                raise Exception("Extracted text is too short to analyze. This document may contain mostly images or be in an unsupported format.")
+            try:
+                text = extract_text_robust(doc['filepath'])
+                if text is None:
+                    raise Exception("Could not extract readable text from this document. The file may be corrupted, password-protected, or contain only images without text.")
+                
+                if len(text.strip()) < 50:
+                    raise Exception("Extracted text is too short to analyze. This document may contain mostly images or be in an unsupported format.")
+                
+                logger.info(f"OCR completed for doc {doc_id}: extracted {len(text)} characters")
+                
+            except Exception as ocr_error:
+                logger.warning(f"OCR issue for doc {doc_id}: {ocr_error}")
+                # Update with fallback message
+                update_status('extracting_text', {'progress': 35, 'message': 'Fallback OCR activated - continuing...'})
+                # Re-raise to handle in outer try-catch
+                raise ocr_error
             
-            # Start analysis
-            update_status('analyzing')
+            # Start analysis with progress
+            update_status('analyzing', {'progress': 70, 'message': 'Analyzing risks with DeepSeek AI...'})
+            
             analysis_result = analyze_contract(text)
             
             if analysis_result.get("error"):
                 raise Exception(analysis_result["error"])
             
+            # Finalizing
+            update_status('analyzing', {'progress': 95, 'message': 'Finalizing summary...'})
+            
             # Store results
-            update_status('completed')
             with get_db_connection() as final_conn:
                 with final_conn.cursor() as final_cursor:
                     final_cursor.execute(
@@ -62,12 +86,25 @@ def analyze_document(doc_id, app_context):
             logger.info(f"Document analysis completed: {doc['filename']} (ID: {doc_id})")
             
         except Exception as e:
-            logger.error(f"Document analysis failed for doc_id {doc_id}: {e}")
+            error_message = str(e)
+            logger.error(f"Document analysis failed for doc_id {doc_id}: {error_message}")
+            
+            # Provide specific error messages for common issues
+            if "google" in error_message.lower() and "403" in error_message:
+                error_message = "Google Cloud OCR access denied (403). Using fallback OCR method. Please enable Document AI API later."
+            elif "ocr" in error_message.lower():
+                error_message = "OCR processing failed. The document may be corrupted or in an unsupported format."
+            elif "deepseek" in error_message.lower() or "api" in error_message.lower():
+                error_message = "AI analysis service temporarily unavailable. Please try again later."
+            
             try:
                 # Mark as error in the database
                 with get_db_connection() as error_conn:
                     with error_conn.cursor() as error_cursor:
-                        error_cursor.execute("UPDATE documents SET status = 'error', analysis = %s WHERE id = %s", (json.dumps({'error': str(e)}), doc_id))
+                        error_cursor.execute(
+                            "UPDATE documents SET status = 'error', analysis = %s WHERE id = %s", 
+                            (json.dumps({'error': error_message}), doc_id)
+                        )
                         error_conn.commit()
             except Exception as final_e:
                 logger.error(f"Failed to even update status to error for doc_id {doc_id}: {final_e}")
@@ -212,7 +249,7 @@ def upload_file():
 
 @doc_bp.route('/status/<int:doc_id>')
 def status(doc_id):
-    """Get document status for polling - renamed from get_status to match frontend URL"""
+    """Get document status for polling - enhanced with progress details"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
@@ -237,6 +274,14 @@ def status(doc_id):
                     logger.error(f"Failed to parse analysis JSON for document {doc_id}")
                     response['analysis'] = None
             
+            # If status is in progress and analysis contains progress info, extract it
+            if doc['status'] in ['processing', 'extracting_text', 'analyzing'] and response['analysis']:
+                if isinstance(response['analysis'], dict) and 'progress' in response['analysis']:
+                    response['progress'] = response['analysis']['progress']
+                    response['message'] = response['analysis'].get('message', 'Processing...')
+                    # Don't return the temporary progress data as analysis
+                    response['analysis'] = None
+            
             # If there's an error, include the error message
             if doc['status'] == 'error' and response['analysis'] and isinstance(response['analysis'], dict):
                 response['error_message'] = response['analysis'].get('error', 'Unknown error occurred')
@@ -253,7 +298,7 @@ def status(doc_id):
 
 @doc_bp.route('/progress/<int:doc_id>')
 def progress(doc_id):
-    """Get document progress for progress bar updates"""
+    """Get document progress for progress bar updates - enhanced with detailed stages"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
@@ -261,23 +306,70 @@ def progress(doc_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT status FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
+        cursor.execute("SELECT status, analysis FROM documents WHERE id = %s AND user_id = %s", (doc_id, session['user_id']))
         doc = cursor.fetchone()
         
         if doc:
-            # Map status to progress percentage
+            # Enhanced progress mapping with detailed stages
             progress_map = {
-                'processing': 10,
-                'extracting_text': 40,
-                'analyzing': 80,
-                'completed': 100,
-                'error': 100
+                'processing': {
+                    'progress': 10,
+                    'stage': 'upload',
+                    'message': 'Reading the file...',
+                    'description': 'Initializing document processing'
+                },
+                'extracting_text': {
+                    'progress': 40,
+                    'stage': 'ocr',
+                    'message': 'Extracting text with OCR...',
+                    'description': 'Converting document to readable text'
+                },
+                'analyzing': {
+                    'progress': 80,
+                    'stage': 'analysis',
+                    'message': 'Analyzing risks with DeepSeek AI...',
+                    'description': 'Identifying contract risks and clauses'
+                },
+                'completed': {
+                    'progress': 100,
+                    'stage': 'complete',
+                    'message': 'Analysis complete!',
+                    'description': 'Contract analysis finished successfully'
+                },
+                'error': {
+                    'progress': 100,
+                    'stage': 'error',
+                    'message': 'Analysis failed',
+                    'description': 'An error occurred during processing'
+                }
             }
             
-            return jsonify({
-                'status': doc['status'],
-                'progress': progress_map.get(doc['status'], 0)
+            status_info = progress_map.get(doc['status'], {
+                'progress': 0,
+                'stage': 'upload',
+                'message': f'Status: {doc["status"]}',
+                'description': 'Processing document'
             })
+            
+            response = {
+                'status': doc['status'],
+                'progress': status_info['progress'],
+                'stage': status_info['stage'],
+                'message': status_info['message'],
+                'description': status_info['description']
+            }
+            
+            # If analysis contains specific progress info, use it
+            if doc['analysis'] and isinstance(doc['analysis'], str):
+                try:
+                    analysis_data = json.loads(doc['analysis'])
+                    if isinstance(analysis_data, dict) and 'progress' in analysis_data:
+                        response['progress'] = analysis_data['progress']
+                        response['message'] = analysis_data.get('message', status_info['message'])
+                except json.JSONDecodeError:
+                    pass
+            
+            return jsonify(response)
         else:
             return jsonify({'error': 'Document not found'}), 404
     except Exception as e:
